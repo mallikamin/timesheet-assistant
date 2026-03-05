@@ -1,30 +1,29 @@
 """
-Mock Harvest API module.
-Stores time entries locally in JSON. Same interface as future real Harvest API.
+Harvest storage module — backed by Supabase PostgreSQL.
+Stores time entries and chat logs persistently.
 """
 
-import json
+import os
 import uuid
-from datetime import datetime, date
-from pathlib import Path
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
-DATA_FILE = Path(__file__).parent / "data" / "entries.json"
+from supabase import create_client
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+_client = None
 
 
-def _load_entries() -> List[Dict]:
-    if not DATA_FILE.exists():
-        return []
-    with open(DATA_FILE, "r") as f:
-        data = f.read().strip()
-        return json.loads(data) if data else []
+def _get_client():
+    global _client
+    if _client is None:
+        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _client
 
 
-def _save_entries(entries: List[Dict]):
-    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(DATA_FILE, "w") as f:
-        json.dump(entries, f, indent=2, default=str)
-
+# --- Time Entries ---
 
 def create_draft_entry(
     user: str,
@@ -36,62 +35,72 @@ def create_draft_entry(
     notes: str,
     entry_date: str = None,
     status: str = "Draft",
-) -> dict:
-    """Create a draft time entry. Returns the created entry."""
+) -> Dict:
+    """Create a draft time entry in Supabase."""
     entry = {
         "id": str(uuid.uuid4())[:8],
-        "user": user,
+        "user_name": user,
         "client": client,
         "project_code": project_code,
         "project_name": project_name,
         "task": task,
         "hours": hours,
         "notes": notes,
-        "date": entry_date or date.today().isoformat(),
+        "entry_date": entry_date or date.today().isoformat(),
         "status": status,
-        "created_at": datetime.now().isoformat(),
     }
-    entries = _load_entries()
-    entries.append(entry)
-    _save_entries(entries)
-    return entry
+    sb = _get_client()
+    result = sb.table("time_entries").insert(entry).execute()
+    row = result.data[0] if result.data else entry
+    # Remap for frontend compatibility
+    row["user"] = row.pop("user_name", user)
+    row["date"] = row.pop("entry_date", entry["entry_date"])
+    return row
 
 
 def get_entries(user: str = None, entry_date: str = None) -> List[Dict]:
-    """Get entries, optionally filtered by user and/or date."""
-    entries = _load_entries()
+    """Get entries from Supabase, optionally filtered."""
+    sb = _get_client()
+    query = sb.table("time_entries").select("*")
     if user:
-        entries = [e for e in entries if e["user"] == user]
+        query = query.eq("user_name", user)
     if entry_date:
-        entries = [e for e in entries if e["date"] == entry_date]
+        query = query.eq("entry_date", entry_date)
+    query = query.order("created_at", desc=False)
+    result = query.execute()
+    entries = result.data or []
+    # Remap fields for frontend
+    for e in entries:
+        e["user"] = e.pop("user_name", "")
+        e["date"] = e.pop("entry_date", "")
     return entries
 
 
 def update_entry(entry_id: str, **kwargs) -> Optional[Dict]:
-    """Update an entry by ID. Returns updated entry or None."""
-    entries = _load_entries()
-    for entry in entries:
-        if entry["id"] == entry_id:
-            for key, value in kwargs.items():
-                if key in entry:
-                    entry[key] = value
-            _save_entries(entries)
-            return entry
+    """Update an entry by ID."""
+    sb = _get_client()
+    # Remap frontend field names to DB columns
+    if "date" in kwargs:
+        kwargs["entry_date"] = kwargs.pop("date")
+    if "user" in kwargs:
+        kwargs["user_name"] = kwargs.pop("user")
+    result = sb.table("time_entries").update(kwargs).eq("id", entry_id).execute()
+    if result.data:
+        row = result.data[0]
+        row["user"] = row.pop("user_name", "")
+        row["date"] = row.pop("entry_date", "")
+        return row
     return None
 
 
 def delete_entry(entry_id: str) -> bool:
-    """Delete an entry by ID. Returns True if deleted."""
-    entries = _load_entries()
-    original_len = len(entries)
-    entries = [e for e in entries if e["id"] != entry_id]
-    if len(entries) < original_len:
-        _save_entries(entries)
-        return True
-    return False
+    """Delete an entry by ID."""
+    sb = _get_client()
+    result = sb.table("time_entries").delete().eq("id", entry_id).execute()
+    return bool(result.data)
 
 
-def get_user_summary(user: str, entry_date: str = None) -> dict:
+def get_user_summary(user: str, entry_date: str = None) -> Dict:
     """Get a summary of hours for a user."""
     entries = get_entries(user=user, entry_date=entry_date)
     total_hours = sum(e["hours"] for e in entries)
@@ -105,3 +114,27 @@ def get_user_summary(user: str, entry_date: str = None) -> dict:
         "entry_count": len(entries),
         "by_project": by_project,
     }
+
+
+# --- Chat Logs ---
+
+def save_chat_message(user: str, role: str, content: str, session_id: str = None):
+    """Save a chat message to Supabase."""
+    sb = _get_client()
+    sb.table("chat_logs").insert({
+        "user_name": user,
+        "role": role,
+        "content": content,
+        "session_id": session_id or "",
+    }).execute()
+
+
+def get_chat_history(user: str, session_id: str = None, limit: int = 50) -> List[Dict]:
+    """Get recent chat history for a user."""
+    sb = _get_client()
+    query = sb.table("chat_logs").select("*").eq("user_name", user)
+    if session_id:
+        query = query.eq("session_id", session_id)
+    query = query.order("created_at", desc=False).limit(limit)
+    result = query.execute()
+    return result.data or []

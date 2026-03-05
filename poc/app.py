@@ -133,7 +133,11 @@ async def chat(req: ChatRequest):
     # Parse any entries from the response
     display_text, entries_data = parse_entries_from_response(ai_text)
 
-    # Save entries to mock Harvest
+    # Save chat messages to Supabase
+    harvest_mock.save_chat_message(req.user, "user", req.message)
+    harvest_mock.save_chat_message(req.user, "assistant", display_text)
+
+    # Save entries to Supabase
     created_entries = []
     for entry_data in entries_data:
         entry = harvest_mock.create_draft_entry(
