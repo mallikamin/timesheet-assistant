@@ -128,3 +128,36 @@ Open items for next session:
 Impact on plan:
 - Phase 1: COMPLETE. POC live and deployed with auth, persistence, and sheet sync.
 - Phase 2: Starting with Calendar API integration next session.
+
+---
+
+## 2026-03-05 (Build Session 2 - Calendar Integration)
+Attendees: Malik Amin (dev)
+
+Built:
+1. Google Calendar API integration — OAuth scope extended to calendar.readonly.
+2. New calendar_sync.py module — fetches user's calendar events via REST API with httpx.
+3. Token management — stores Google OAuth tokens (access + refresh) in session, auto-refreshes on expiry.
+4. New endpoints: GET /api/calendar/events, POST /api/calendar/suggest.
+5. "Suggest from Calendar" button in chat UI — one click pulls today's meetings and feeds them to Claude for time entry suggestions.
+6. Claude maps calendar events to Harvest projects and creates draft entries.
+
+Technical decisions:
+- User's OAuth token (not service account) for calendar access — need personal calendar.
+- Direct REST calls with httpx — no new dependencies needed.
+- Tokens in session for POC — can move to Supabase later.
+- User-initiated calendar pull (button click, not auto-load) — privacy-conscious.
+- access_type=offline + prompt=consent to get refresh tokens from Google.
+
+Prerequisite:
+- Google Calendar API must be enabled in Cloud Console (project: pure-feat-380217).
+- Users must re-login after deploy to grant calendar permission.
+
+Open items:
+1. Enable Calendar API in Google Cloud Console.
+2. Test end-to-end: login → calendar pull → entry suggestion → confirm.
+3. Deploy to Render.
+4. Next: Gmail API, Drive API, Harvest API.
+
+Impact on plan:
+- Phase 2: Calendar API BUILT. Ready to test and deploy.

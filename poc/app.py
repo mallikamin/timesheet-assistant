@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
+import calendar_sync
 import harvest_mock
 import sheets_sync
 from project_mapping import get_all_projects_for_prompt
@@ -39,7 +40,9 @@ oauth.register(
     client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
     client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
+    client_kwargs={
+        "scope": "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+    },
 )
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -139,7 +142,9 @@ async def login_page(request: Request):
 @app.get("/auth/google")
 async def auth_google(request: Request):
     redirect_uri = request.url_for("auth_callback")
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    return await oauth.google.authorize_redirect(
+        request, redirect_uri, access_type="offline", prompt="consent"
+    )
 
 
 @app.get("/auth/callback")
@@ -149,11 +154,17 @@ async def auth_callback(request: Request):
     if not userinfo:
         return RedirectResponse(url="/login")
 
-    # Store user in session
+    # Store user info in session
     request.session["user"] = {
         "email": userinfo["email"],
         "name": userinfo.get("name", userinfo["email"].split("@")[0]),
         "picture": userinfo.get("picture", ""),
+    }
+    # Store Google OAuth tokens for Calendar API access
+    request.session["google_token"] = {
+        "access_token": token.get("access_token", ""),
+        "refresh_token": token.get("refresh_token", ""),
+        "expires_at": token.get("expires_at", 0),
     }
     return RedirectResponse(url="/")
 
@@ -251,12 +262,117 @@ async def update_entry(entry_id: str, request: Request):
     return {"entry": entry, "success": entry is not None}
 
 
+@app.get("/api/calendar/events")
+async def get_calendar_events(request: Request, target_date: str = None):
+    """Fetch the user's Google Calendar events for a given date."""
+    user = get_current_user(request)
+    if not user:
+        return {"error": "Not authenticated", "events": []}
+
+    google_token = request.session.get("google_token")
+    if not google_token or not google_token.get("access_token"):
+        return {"error": "no_calendar_access", "events": []}
+
+    # Refresh token if expired
+    valid_token = calendar_sync.ensure_valid_token(google_token)
+    if not valid_token:
+        return {"error": "token_expired", "events": []}
+
+    # Update session with refreshed token
+    request.session["google_token"] = valid_token
+
+    events = calendar_sync.get_events(valid_token["access_token"], target_date)
+    return {"events": events, "date": target_date or date.today().isoformat()}
+
+
+@app.post("/api/calendar/suggest")
+async def suggest_from_calendar(request: Request):
+    """Fetch calendar events and ask Claude to suggest time entries."""
+    user = get_current_user(request)
+    if not user:
+        return ChatResponse(response="Please log in first.", entries_created=[])
+
+    body = await request.json()
+    target_date = body.get("date")
+    history = body.get("history", [])
+
+    # Get calendar events
+    google_token = request.session.get("google_token")
+    if not google_token or not google_token.get("access_token"):
+        return ChatResponse(
+            response="I don't have access to your calendar. Please sign out and sign back in to grant calendar permission.",
+            entries_created=[],
+        )
+
+    valid_token = calendar_sync.ensure_valid_token(google_token)
+    if not valid_token:
+        return ChatResponse(
+            response="Your calendar access has expired. Please sign out and sign back in.",
+            entries_created=[],
+        )
+
+    request.session["google_token"] = valid_token
+    events = calendar_sync.get_events(valid_token["access_token"], target_date)
+
+    if not events:
+        return ChatResponse(
+            response="No calendar events found for today. Tell me what you worked on and I'll log it manually.",
+            entries_created=[],
+        )
+
+    # Format events and ask Claude to suggest entries
+    events_text = calendar_sync.format_events_for_prompt(events, target_date)
+    calendar_prompt = (
+        f"I just pulled my calendar. Here are my events:\n\n{events_text}\n\n"
+        "Can you suggest time entries for these? Map them to the Harvest projects where possible."
+    )
+
+    messages = []
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": calendar_prompt})
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
+
+    ai_text = response.content[0].text
+    display_text, entries_data = parse_entries_from_response(ai_text)
+
+    # Save chat
+    harvest_mock.save_chat_message(user["name"], "user", calendar_prompt)
+    harvest_mock.save_chat_message(user["name"], "assistant", display_text)
+
+    # Save entries
+    created_entries = []
+    for entry_data in entries_data:
+        entry = harvest_mock.create_draft_entry(
+            user=user["name"],
+            client=entry_data.get("client", "Unknown"),
+            project_code=entry_data.get("project_code", ""),
+            project_name=entry_data.get("project_name", ""),
+            task=entry_data.get("task", "General"),
+            hours=float(entry_data.get("hours", 0)),
+            notes=entry_data.get("notes", ""),
+            entry_date=entry_data.get("date", date.today().isoformat()),
+            status=entry_data.get("status", "Draft"),
+        )
+        created_entries.append(entry)
+        sheets_sync.sync_entry_to_sheet(entry)
+
+    return ChatResponse(response=display_text, entries_created=created_entries)
+
+
 @app.get("/api/me")
 async def get_me(request: Request):
     user = get_current_user(request)
     if not user:
         return {"authenticated": False}
-    return {"authenticated": True, **user}
+    has_calendar = bool(request.session.get("google_token", {}).get("access_token"))
+    return {"authenticated": True, "has_calendar": has_calendar, **user}
 
 
 if __name__ == "__main__":

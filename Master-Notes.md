@@ -23,8 +23,8 @@ AI voice/text timesheet assistant as a simple web page.
 - Live URL: https://timesheet-assistant-jclk.onrender.com
 - Repo: https://github.com/mallikamin/timesheet-assistant
 
-### Phase 2 — Auto-Capture [NEXT]
-- Google Calendar API: auto-pull meetings, suggest time entries.
+### Phase 2 — Auto-Capture [IN PROGRESS]
+- Google Calendar API: auto-pull meetings, suggest time entries. [BUILT]
 - Gmail API: detect client email activity, suggest entries.
 - Google Drive API: track doc/sheet/slide editing time.
 - Harvest API: create real draft entries (when token provided).
@@ -84,8 +84,8 @@ AI voice/text timesheet assistant as a simple web page.
 - Project: My First Project (pure-feat-380217)
 - Service account: timesheet-assistant@pure-feat-380217.iam.gserviceaccount.com
 - OAuth Client ID: 199782164823-j910h9m9sroes50if0tcbq00sfgu30d6.apps.googleusercontent.com
-- APIs enabled: Google Sheets API
-- APIs to enable next: Google Calendar API, Gmail API, Google Drive API
+- APIs enabled: Google Sheets API, Google Calendar API
+- APIs to enable next: Gmail API, Google Drive API
 
 ### Google Sheet
 - Timesheet Log: https://docs.google.com/spreadsheets/d/1PcDZ-5xPQr2mTyhujHLHmwIHp0INmOAITkGFbFwDwzw
@@ -132,7 +132,7 @@ AI voice/text timesheet assistant as a simple web page.
 - Pilot user details and typical projects.
 
 ## Google APIs Roadmap (all free tier)
-1. Calendar API — auto-pull meetings → suggest time entries [NEXT]
+1. Calendar API — auto-pull meetings → suggest time entries [BUILT]
 2. Gmail API — detect client email activity
 3. Drive API — track document editing time
 4. Gemini API — replace Claude
