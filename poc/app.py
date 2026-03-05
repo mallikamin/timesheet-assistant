@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 
 import calendar_sync
+import drive_sync
 import harvest_mock
 import sheets_sync
 from project_mapping import get_all_projects_for_prompt
@@ -41,7 +42,7 @@ oauth.register(
     client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={
-        "scope": "openid email profile https://www.googleapis.com/auth/calendar.readonly",
+        "scope": "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.metadata.readonly",
     },
 )
 
@@ -367,6 +368,84 @@ async def suggest_from_calendar(request: Request):
     harvest_mock.save_chat_message(user["name"], "assistant", display_text)
 
     # Save entries
+    created_entries = []
+    for entry_data in entries_data:
+        entry = harvest_mock.create_draft_entry(
+            user=user["name"],
+            client=entry_data.get("client", "Unknown"),
+            project_code=entry_data.get("project_code", ""),
+            project_name=entry_data.get("project_name", ""),
+            task=entry_data.get("task", "General"),
+            hours=float(entry_data.get("hours", 0)),
+            notes=entry_data.get("notes", ""),
+            entry_date=entry_data.get("date", date.today().isoformat()),
+            status=entry_data.get("status", "Draft"),
+        )
+        created_entries.append(entry)
+        sheets_sync.sync_entry_to_sheet(entry)
+
+    return ChatResponse(response=display_text, entries_created=created_entries)
+
+
+@app.post("/api/drive/suggest")
+async def suggest_from_drive(request: Request):
+    """Fetch Drive activity and ask Claude to suggest time entries."""
+    user = get_current_user(request)
+    if not user:
+        return ChatResponse(response="Please log in first.", entries_created=[])
+
+    body = await request.json()
+    target_date = body.get("date")
+    history = body.get("history", [])
+
+    google_token = request.session.get("google_token")
+    if not google_token or not google_token.get("access_token"):
+        return ChatResponse(
+            response="I don't have access to your Google Drive. Please sign out and sign back in to grant permission.",
+            entries_created=[],
+        )
+
+    valid_token = calendar_sync.ensure_valid_token(google_token)
+    if not valid_token:
+        return ChatResponse(
+            response="Your Google access has expired. Please sign out and sign back in.",
+            entries_created=[],
+        )
+
+    request.session["google_token"] = valid_token
+    files = drive_sync.get_recent_files(valid_token["access_token"], target_date)
+
+    if not files:
+        return ChatResponse(
+            response="No Google Drive activity found for today. Tell me what you worked on and I'll log it manually.",
+            entries_created=[],
+        )
+
+    files_text = drive_sync.format_files_for_prompt(files, target_date)
+    drive_prompt = (
+        f"I just pulled my Google Drive activity. Here are the files I edited today:\n\n{files_text}\n\n"
+        "Can you suggest time entries based on these? Map them to the Harvest projects where possible. "
+        "Ask me about anything you're unsure of."
+    )
+
+    messages = []
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": drive_prompt})
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
+
+    ai_text = response.content[0].text
+    display_text, entries_data = parse_entries_from_response(ai_text)
+
+    harvest_mock.save_chat_message(user["name"], "user", drive_prompt)
+    harvest_mock.save_chat_message(user["name"], "assistant", display_text)
+
     created_entries = []
     for entry_data in entries_data:
         entry = harvest_mock.create_draft_entry(

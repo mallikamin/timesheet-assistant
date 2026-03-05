@@ -26,7 +26,7 @@ AI voice/text timesheet assistant as a simple web page.
 ### Phase 2 — Auto-Capture [IN PROGRESS]
 - Google Calendar API: auto-pull meetings, suggest time entries. [BUILT]
 - Gmail API: detect client email activity, suggest entries.
-- Google Drive API: track doc/sheet/slide editing time.
+- Google Drive API: track doc/sheet/slide editing time. [BUILT]
 - Harvest API: create real draft entries (when token provided).
 - Google Chat bot: log time from team chat.
 - Daily draft generation + Friday review reminder (Cloud Scheduler).
@@ -84,8 +84,8 @@ AI voice/text timesheet assistant as a simple web page.
 - Project: My First Project (pure-feat-380217)
 - Service account: timesheet-assistant@pure-feat-380217.iam.gserviceaccount.com
 - OAuth Client ID: 199782164823-j910h9m9sroes50if0tcbq00sfgu30d6.apps.googleusercontent.com
-- APIs enabled: Google Sheets API, Google Calendar API
-- APIs to enable next: Gmail API, Google Drive API
+- APIs enabled: Google Sheets API, Google Calendar API, Google Drive API
+- APIs to enable next: Gmail API
 
 ### Google Sheet
 - Timesheet Log: https://docs.google.com/spreadsheets/d/1PcDZ-5xPQr2mTyhujHLHmwIHp0INmOAITkGFbFwDwzw
@@ -134,7 +134,7 @@ AI voice/text timesheet assistant as a simple web page.
 ## Google APIs Roadmap (all free tier)
 1. Calendar API — auto-pull meetings → suggest time entries [BUILT]
 2. Gmail API — detect client email activity
-3. Drive API — track document editing time
+3. Drive API — track document editing time [BUILT]
 4. Gemini API — replace Claude
 5. Cloud Speech-to-Text — better voice than browser API
 6. Chat API — bot for logging via Google Chat

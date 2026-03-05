@@ -125,6 +125,25 @@
         .btn-calendar:hover { background: #c8e6c9; border-color: #a5d6a7; }
         .btn-calendar:disabled { background: #f5f5f5; color: #bbb; border-color: #e0e0e0; cursor: not-allowed; }
         .btn-calendar .cal-icon { font-size: 15px; }
+        .btn-drive {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-drive:hover { background: #bbdefb; border-color: #90caf9; }
+        .btn-drive:disabled { background: #f5f5f5; color: #bbb; border-color: #e0e0e0; cursor: not-allowed; }
+        .btn-drive .drive-icon { font-size: 15px; }
+        .suggest-buttons { display: flex; gap: 8px; }
         .chat-messages {
             flex: 1;
             min-height: 0;
@@ -376,9 +395,14 @@
     <div class="chat-panel">
         <div class="chat-header">
             <span>Tell me what you worked on today — speak or type.</span>
-            <button class="btn-calendar" id="calendarBtn" title="Pull today's calendar events">
-                <span class="cal-icon">&#128197;</span> Suggest from Calendar
-            </button>
+            <div class="suggest-buttons">
+                <button class="btn-calendar" id="calendarBtn" title="Pull today's calendar events">
+                    <span class="cal-icon">&#128197;</span> Calendar
+                </button>
+                <button class="btn-drive" id="driveBtn" title="Pull today's Drive activity">
+                    <span class="drive-icon">&#128196;</span> Drive
+                </button>
+            </div>
         </div>
         <div class="chat-messages" id="chatMessages">
             <div class="message assistant">G'day! I'm your timesheet assistant. Just tell me what you've been working on and I'll log it into Harvest for you.
@@ -419,6 +443,7 @@ What have you been up to?</div>
     const sendBtn = document.getElementById('sendBtn');
     const micBtn = document.getElementById('micBtn');
     const calendarBtn = document.getElementById('calendarBtn');
+    const driveBtn = document.getElementById('driveBtn');
     const currentUserName = document.getElementById('currentUserName').value;
     const entriesList = document.getElementById('entriesList');
     const entriesSummary = document.getElementById('entriesSummary');
@@ -621,6 +646,65 @@ What have you been up to?</div>
     }
 
     calendarBtn.addEventListener('click', suggestFromCalendar);
+
+    // --- Drive Suggest ---
+
+    async function suggestFromDrive() {
+        if (isProcessing) return;
+        isProcessing = true;
+        driveBtn.disabled = true;
+        calendarBtn.disabled = true;
+        sendBtn.disabled = true;
+
+        addSystemMessage('Scanning your Google Drive activity...');
+        showTyping();
+
+        try {
+            const res = await fetch('/api/drive/suggest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: null,
+                    history: conversationHistory,
+                }),
+            });
+
+            const data = await res.json();
+            hideTyping();
+
+            if (data.response) {
+                conversationHistory.push({
+                    role: 'user',
+                    content: '[Pulled Drive activity and asked for suggestions]'
+                });
+                conversationHistory.push({
+                    role: 'assistant',
+                    content: data.response
+                });
+                addMessage('assistant', data.response);
+            }
+
+            if (data.entries_created && data.entries_created.length > 0) {
+                for (const entry of data.entries_created) {
+                    const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
+                    addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+                }
+                refreshEntries();
+            }
+        } catch (err) {
+            hideTyping();
+            addMessage('assistant', 'Sorry, could not fetch Drive activity. Please try again.');
+            console.error(err);
+        }
+
+        isProcessing = false;
+        driveBtn.disabled = false;
+        calendarBtn.disabled = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+    }
+
+    driveBtn.addEventListener('click', suggestFromDrive);
 
     // --- Voice Input (Web Speech API) ---
 
