@@ -96,3 +96,35 @@ Impact on plan:
 - Phase 1: REVISED — voice/text AI timesheet assistant POC (web page). Mock Harvest output until API available.
 - Phase 2: Plug in real Harvest API + add Google Calendar/Workspace auto-capture.
 - Phase 3: Desktop app tracking, org-wide scale.
+
+---
+
+## 2026-03-05 (Build Session - Post Call)
+Attendees: Malik Amin (dev)
+
+Built and deployed:
+1. POC web app: FastAPI + vanilla HTML/JS. Voice + text input. Claude-powered AI.
+2. Google SSO login (Authlib OAuth2). Users sign in with Google account.
+3. Supabase PostgreSQL persistence — time_entries and chat_logs tables.
+4. Google Sheets sync — every entry also pushed to shared Timesheet Log sheet.
+5. Deployed to Render free tier: https://timesheet-assistant-jclk.onrender.com
+6. Code on GitHub: https://github.com/mallikamin/timesheet-assistant
+
+Infrastructure set up:
+- Supabase project: vsbhiuozqyxxvqwxwyuh (Time assistant)
+- Google Cloud project: pure-feat-380217 (My First Project)
+- Service account: timesheet-assistant@pure-feat-380217.iam.gserviceaccount.com
+- Google Sheets API enabled
+- OAuth consent screen + credentials configured
+- Render env vars: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_JSON
+
+Open items for next session:
+1. Google Calendar API integration — auto-pull meetings to suggest time entries.
+2. Enable Calendar API in Google Cloud Console.
+3. Add calendar read scope to OAuth + service account.
+4. Build calendar-to-entry suggestion flow in the chat assistant.
+5. Wire in Harvest API when token is available.
+
+Impact on plan:
+- Phase 1: COMPLETE. POC live and deployed with auth, persistence, and sheet sync.
+- Phase 2: Starting with Calendar API integration next session.

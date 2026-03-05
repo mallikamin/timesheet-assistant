@@ -10,50 +10,90 @@ Dictate to your timesheet assistant — it logs it in Harvest for you.
 
 ## Build Strategy (Revised after Tariq call 2026-03-05)
 
-### Phase 1 — POC (Build Now)
+### Phase 1 — POC [BUILT + DEPLOYED]
 AI voice/text timesheet assistant as a simple web page.
 - Input: user speaks or types what they worked on in plain language.
-- AI engine: parses natural language into Project, Task, Duration, Notes. Conversational — pushes back with clarifying questions when input is ambiguous.
+- AI engine: Claude (swap to Gemini when access provided). Conversational — pushes back with clarifying questions.
 - Mapping: keyword matching against Harvest project/task list.
-- Output: Harvest draft entries via API (mock output until API token provided).
+- Output: Draft entries stored in Supabase + synced to Google Sheet.
 - Safety: low-confidence entries routed to Needs Review queue.
+- Auth: Google SSO login.
 - Min time block: 5 minutes.
 - Pilot users: Tariq Munir, Malik Amin, Jawad Saleem.
+- Live URL: https://timesheet-assistant-jclk.onrender.com
+- Repo: https://github.com/mallikamin/timesheet-assistant
 
-Target outcome:
-- Zero dropdown hunting — user just talks.
-- Better notes and audit trails from natural language context.
-- Immediate reduction in manual timesheet effort.
+### Phase 2 — Auto-Capture [NEXT]
+- Google Calendar API: auto-pull meetings, suggest time entries.
+- Gmail API: detect client email activity, suggest entries.
+- Google Drive API: track doc/sheet/slide editing time.
+- Harvest API: create real draft entries (when token provided).
+- Google Chat bot: log time from team chat.
+- Daily draft generation + Friday review reminder (Cloud Scheduler).
+- Gemini API: replace Claude when access provided.
 
-### Phase 2 — Harvest API Live + Auto-Capture
-- Plug in real Harvest API (create draft entries programmatically).
-- Add Google Calendar auto-import (Harvest already has sidebar — we add smart Project/Task mapping).
-- Add Google Workspace activity capture (Docs, Sheets, Slides, Gmail).
-- Daily draft generation + Friday review reminder.
-
-### Phase 3 — Scale + Desktop Tracking
-- Desktop app/browser activity tracking for non-Google work (Excel, PowerPoint, etc.).
+### Phase 3 — Scale + Intelligence
+- Desktop app/browser activity tracking for non-Google work.
 - Org-wide rollout to 100 users.
-- Advanced mapping rules and learning from user corrections.
+- Vertex AI: learn from user correction patterns.
+- Looker Studio dashboards for utilisation reporting.
+- AppSheet mobile app for on-the-go logging.
+- Cloud Run hosting (replace Render free tier).
 
-## POC Architecture
+## Current Architecture
 
 ```
-[User] --voice/text--> [Web App]
+[User] --voice/text--> [Web App (Render)]
                           |
-                    [AI Engine - Claude now / Gemini later]
+                    [Google SSO Auth]
+                          |
+                    [AI Engine - Claude API]
                           |
                     [Mapping Engine]
-                    (project/task matcher)
                           |
-                    [Harvest API] --> Draft entries in Harvest
+              +-----------+-----------+
+              |                       |
+        [Supabase DB]         [Google Sheet]
+        (entries + chat)      (visible log)
 ```
 
-Components:
-1. Web page — voice input (Web Speech API) + text chat.
-2. AI engine — LLM parses input, asks clarifying questions, extracts structured data.
-3. Mapping engine — matches extracted project/client names to Harvest project codes.
-4. Harvest connector — creates draft time entries via API (mocked until token available).
+## Tech Stack
+- Backend: Python FastAPI
+- Frontend: Vanilla HTML/JS (single page)
+- AI: Claude API (Anthropic) → Gemini later
+- Auth: Google SSO (Authlib + OAuth2)
+- DB: Supabase PostgreSQL (time_entries + chat_logs tables)
+- Sync: Google Sheets API (gspread)
+- Voice: Web Speech API (browser, en-AU)
+- Hosting: Render free tier
+- Repo: GitHub (mallikamin/timesheet-assistant)
+
+## Infrastructure Credentials
+
+### Render
+- Service: timesheet-assistant (srv-d6knrv7tskes73cueam0)
+- URL: https://timesheet-assistant-jclk.onrender.com
+- Env vars: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_SHEET_ID, GOOGLE_SERVICE_ACCOUNT_JSON
+
+### Supabase
+- Project: Time assistant (vsbhiuozqyxxvqwxwyuh)
+- URL: https://vsbhiuozqyxxvqwxwyuh.supabase.co
+- Tables: time_entries, chat_logs
+
+### Google Cloud
+- Project: My First Project (pure-feat-380217)
+- Service account: timesheet-assistant@pure-feat-380217.iam.gserviceaccount.com
+- OAuth Client ID: 199782164823-j910h9m9sroes50if0tcbq00sfgu30d6.apps.googleusercontent.com
+- APIs enabled: Google Sheets API
+- APIs to enable next: Google Calendar API, Gmail API, Google Drive API
+
+### Google Sheet
+- Timesheet Log: https://docs.google.com/spreadsheets/d/1PcDZ-5xPQr2mTyhujHLHmwIHp0INmOAITkGFbFwDwzw
+- Shared with service account as Editor
+
+### Harvest (Thrive PR)
+- Workspace: thrivers.harvestaapp.com
+- API token: PENDING from Tariq
 
 ## Known Harvest Projects (from screenshots)
 
@@ -68,6 +108,10 @@ Components:
 | Afterpay | [4-0048] | Animates |
 | Afterpay | [4-0049] | NZ PR Retainer Mar-Dec 2026 |
 | AGL | — | Existing Growth - AGL |
+| CommBank | CB-001 | Brand Campaign 2026 (dummy) |
+| Telstra | TEL-001 | Digital Transformation (dummy) |
+| Internal | INT-001 | Operations & Admin (dummy) |
+| Internal | INT-002 | Business Development (dummy) |
 
 ## Key Decisions (from Tariq call)
 - Daily drafts, not week-end batch.
@@ -77,6 +121,8 @@ Components:
 - Gemini preferred (Google ecosystem), Claude for now.
 - Full info capture ok — no privacy restrictions for POC.
 - 5-minute minimum time blocks.
+- Google SSO for authentication.
+- Supabase for persistence + Google Sheet for visibility.
 
 ## Waiting On (from client)
 - Harvest API admin token.
@@ -84,3 +130,15 @@ Components:
 - Google Cloud / Gemini API access.
 - Sample filled timesheets from pilot users.
 - Pilot user details and typical projects.
+
+## Google APIs Roadmap (all free tier)
+1. Calendar API — auto-pull meetings → suggest time entries [NEXT]
+2. Gmail API — detect client email activity
+3. Drive API — track document editing time
+4. Gemini API — replace Claude
+5. Cloud Speech-to-Text — better voice than browser API
+6. Chat API — bot for logging via Google Chat
+7. Cloud Scheduler — automated reminders
+8. Looker Studio — utilisation dashboards
+9. AppSheet — mobile app from Sheet data
+10. Admin SDK — org user management for scale
