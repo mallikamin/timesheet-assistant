@@ -1,6 +1,7 @@
 """
 Time Logging AI Assistant - POC Backend
 FastAPI server with Claude-powered conversational timesheet assistant.
+Google SSO authentication.
 """
 
 import json
@@ -10,11 +11,13 @@ from typing import Dict, List, Optional, Tuple
 
 import anthropic
 import uvicorn
+from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
 import harvest_mock
 import sheets_sync
@@ -23,7 +26,21 @@ from project_mapping import get_all_projects_for_prompt
 load_dotenv()
 
 app = FastAPI(title="Timesheet Assistant POC")
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
+)
 templates = Jinja2Templates(directory="templates")
+
+# Google OAuth
+oauth = OAuth()
+oauth.register(
+    name="google",
+    client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -51,7 +68,7 @@ Rules:
 
 When you're ready to log an entry, include this exact JSON format in your response (the system will parse it):
 ```ENTRY
-{{
+{{{{
   "client": "Client Name",
   "project_code": "CODE",
   "project_name": "Full Project Name",
@@ -60,7 +77,7 @@ When you're ready to log an entry, include this exact JSON format in your respon
   "notes": "Description of work done",
   "date": "YYYY-MM-DD",
   "status": "Draft"
-}}
+}}}}
 ```
 
 If confidence is low, set status to "Needs Review" instead of "Draft".
@@ -72,6 +89,11 @@ Available Harvest Projects:
 
 Pilot users: {', '.join(PILOT_USERS)}
 """
+
+
+def get_current_user(request: Request) -> Optional[Dict]:
+    """Get the logged-in user from session."""
+    return request.session.get("user")
 
 
 class ChatRequest(BaseModel):
@@ -104,17 +126,65 @@ def parse_entries_from_response(text: str) -> Tuple[str, List[Dict]]:
     return clean_text.strip(), entries
 
 
+# --- Auth Routes ---
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    user = get_current_user(request)
+    if user:
+        return RedirectResponse(url="/")
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/auth/google")
+async def auth_google(request: Request):
+    redirect_uri = request.url_for("auth_callback")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    token = await oauth.google.authorize_access_token(request)
+    userinfo = token.get("userinfo")
+    if not userinfo:
+        return RedirectResponse(url="/login")
+
+    # Store user in session
+    request.session["user"] = {
+        "email": userinfo["email"],
+        "name": userinfo.get("name", userinfo["email"].split("@")[0]),
+        "picture": userinfo.get("picture", ""),
+    }
+    return RedirectResponse(url="/")
+
+
+@app.get("/auth/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/login")
+
+
+# --- App Routes ---
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
     return templates.TemplateResponse("index.html", {
         "request": request,
+        "user": user,
         "users": PILOT_USERS,
         "today": date.today().strftime("%A, %d/%m/%Y"),
     })
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
+    user = get_current_user(request)
+    if not user:
+        return ChatResponse(response="Please log in first.", entries_created=[])
+
     # Build messages for Claude
     messages = []
     for msg in req.history:
@@ -125,7 +195,7 @@ async def chat(req: ChatRequest):
     response = client.messages.create(
         model="claude-sonnet-4-5-20250929",
         max_tokens=1024,
-        system=SYSTEM_PROMPT.replace("USER_NAME", req.user),
+        system=SYSTEM_PROMPT,
         messages=messages,
     )
 
@@ -179,6 +249,14 @@ async def update_entry(entry_id: str, request: Request):
     body = await request.json()
     entry = harvest_mock.update_entry(entry_id, **body)
     return {"entry": entry, "success": entry is not None}
+
+
+@app.get("/api/me")
+async def get_me(request: Request):
+    user = get_current_user(request)
+    if not user:
+        return {"authenticated": False}
+    return {"authenticated": True, **user}
 
 
 if __name__ == "__main__":

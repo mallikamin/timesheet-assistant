@@ -49,6 +49,32 @@
             cursor: pointer;
         }
         .user-select option { background: #16213e; }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid #0f3460;
+        }
+        .user-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .logout-btn {
+            background: none;
+            border: 1px solid #555;
+            color: #ccc;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .logout-btn:hover { border-color: #fff; color: #fff; }
         .date-display {
             font-size: 13px;
             opacity: 0.8;
@@ -312,12 +338,15 @@
 <div class="top-bar">
     <h1><span>&#9200;</span> Timesheet Assistant</h1>
     <div class="top-bar-right">
-        <select class="user-select" id="userSelect">
-            {% for user in users %}
-            <option value="{{ user }}">{{ user }}</option>
-            {% endfor %}
-        </select>
         <div class="date-display">{{ today }}</div>
+        <div class="user-info">
+            {% if user.picture %}
+            <img class="user-avatar" src="{{ user.picture }}" alt="">
+            {% endif %}
+            <span class="user-name">{{ user.name }}</span>
+        </div>
+        <a href="/auth/logout" class="logout-btn">Sign out</a>
+        <input type="hidden" id="currentUserName" value="{{ user.name }}">
     </div>
 </div>
 
@@ -365,7 +394,7 @@ What have you been up to?</div>
     const chatInput = document.getElementById('chatInput');
     const sendBtn = document.getElementById('sendBtn');
     const micBtn = document.getElementById('micBtn');
-    const userSelect = document.getElementById('userSelect');
+    const currentUserName = document.getElementById('currentUserName').value;
     const entriesList = document.getElementById('entriesList');
     const entriesSummary = document.getElementById('entriesSummary');
 
@@ -420,7 +449,7 @@ What have you been up to?</div>
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    user: userSelect.value,
+                    user: currentUserName,
                     message: text,
                     history: conversationHistory,
                 }),
@@ -459,7 +488,7 @@ What have you been up to?</div>
 
     async function refreshEntries() {
         try {
-            const user = encodeURIComponent(userSelect.value);
+            const user = encodeURIComponent(currentUserName);
             const res = await fetch(`/api/entries/${user}`);
             const data = await res.json();
 
@@ -587,13 +616,6 @@ What have you been up to?</div>
         } else {
             startRecording();
         }
-    });
-
-    userSelect.addEventListener('change', () => {
-        conversationHistory = [];
-        chatMessages.innerHTML = '';
-        addMessage('assistant', `G'day ${userSelect.value.split(' ')[0]}! Ready to log your time. What have you been working on?`);
-        refreshEntries();
     });
 
     // Load entries on page load
