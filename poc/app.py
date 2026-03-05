@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 import harvest_mock
+import sheets_sync
 from project_mapping import get_all_projects_for_prompt
 
 load_dotenv()
@@ -152,6 +153,8 @@ async def chat(req: ChatRequest):
             status=entry_data.get("status", "Draft"),
         )
         created_entries.append(entry)
+        # Sync to Google Sheet
+        sheets_sync.sync_entry_to_sheet(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
 
@@ -166,6 +169,8 @@ async def get_entries(user: str, entry_date: str = None):
 @app.delete("/api/entries/{entry_id}")
 async def delete_entry(entry_id: str):
     success = harvest_mock.delete_entry(entry_id)
+    if success:
+        sheets_sync.delete_entry_from_sheet(entry_id)
     return {"success": success}
 
 
