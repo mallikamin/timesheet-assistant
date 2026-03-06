@@ -28,7 +28,12 @@ def _get_sheet():
         return None
 
     try:
+        # Fix private key newlines that get mangled in env vars
+        creds_json = creds_json.replace("\\n", "\n").replace("\n", "\\n")
         creds_data = json.loads(creds_json)
+        # Restore actual newlines in private key
+        if "private_key" in creds_data:
+            creds_data["private_key"] = creds_data["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(creds_data, scopes=SCOPES)
         gc = gspread.authorize(creds)
         _sheet = gc.open_by_key(sheet_id).sheet1
