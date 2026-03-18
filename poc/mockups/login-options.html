@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Page - Design Options</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f0f0f0;
+            padding: 40px 20px;
+        }
+
+        .page-title {
+            text-align: center;
+            font-size: 28px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .page-subtitle {
+            text-align: center;
+            font-size: 15px;
+            color: #888;
+            margin-bottom: 48px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 48px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .option-wrapper {
+            text-align: center;
+        }
+        .option-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+        .option-desc {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+
+        .preview-frame {
+            width: 100%;
+            height: 560px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+            position: relative;
+        }
+
+        /* ============================================ */
+        /* OPTION A: Clean Minimal (Inter + SVG icon)   */
+        /* ============================================ */
+        .opt-a {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', sans-serif;
+        }
+        .opt-a .card {
+            background: white;
+            border-radius: 20px;
+            padding: 48px 44px;
+            width: 380px;
+            text-align: center;
+        }
+        .opt-a .icon-wrap {
+            width: 56px;
+            height: 56px;
+            background: #f1f5f9;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+        }
+        .opt-a .icon-wrap svg {
+            width: 28px;
+            height: 28px;
+            color: #0f172a;
+        }
+        .opt-a h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+            letter-spacing: -0.3px;
+        }
+        .opt-a .subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            line-height: 1.5;
+            margin-bottom: 32px;
+        }
+        .opt-a .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 28px;
+            background: white;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            color: #334155;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .opt-a .google-btn:hover {
+            border-color: #0f172a;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+        }
+        .opt-a .footer {
+            margin-top: 28px;
+            font-size: 12px;
+            color: #cbd5e1;
+            letter-spacing: 0.5px;
+        }
+
+        /* ============================================ */
+        /* OPTION B: Bold Modern (DM Sans + gradient)   */
+        /* ============================================ */
+        .opt-b {
+            background: linear-gradient(160deg, #7c3aed 0%, #4f46e5 40%, #2563eb 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .opt-b .card {
+            background: rgba(255,255,255,0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 52px 44px;
+            width: 390px;
+            text-align: center;
+        }
+        .opt-b .icon-wrap {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 18px;
+            box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+        }
+        .opt-b .icon-wrap svg {
+            width: 30px;
+            height: 30px;
+            color: white;
+        }
+        .opt-b h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1e1b4b;
+            margin-bottom: 8px;
+        }
+        .opt-b .subtitle {
+            font-size: 14px;
+            color: #6b7280;
+            line-height: 1.6;
+            margin-bottom: 36px;
+        }
+        .opt-b .subtitle strong {
+            color: #4f46e5;
+        }
+        .opt-b .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 32px;
+            background: #1e1b4b;
+            border: none;
+            border-radius: 12px;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .opt-b .google-btn:hover {
+            background: #312e81;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 16px rgba(30, 27, 75, 0.3);
+        }
+        .opt-b .google-btn svg path { fill: white !important; }
+        .opt-b .footer {
+            margin-top: 28px;
+            font-size: 12px;
+            color: #9ca3af;
+            font-weight: 500;
+        }
+
+        /* ============================================ */
+        /* OPTION C: Warm Professional (Jakarta Sans)   */
+        /* ============================================ */
+        .opt-c {
+            background: #fafaf9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        .opt-c .card {
+            background: white;
+            border: 1px solid #e7e5e4;
+            border-radius: 20px;
+            padding: 52px 44px;
+            width: 400px;
+            text-align: center;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+        }
+        .opt-c .brand-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+        .opt-c .icon-wrap {
+            width: 40px;
+            height: 40px;
+            background: #fef3c7;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .opt-c .icon-wrap svg {
+            width: 22px;
+            height: 22px;
+            color: #d97706;
+        }
+        .opt-c h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #292524;
+        }
+        .opt-c .subtitle {
+            font-size: 14px;
+            color: #a8a29e;
+            line-height: 1.6;
+            margin-bottom: 32px;
+            margin-top: 12px;
+        }
+        .opt-c .divider {
+            height: 1px;
+            background: #f5f5f4;
+            margin: 0 -4px 32px;
+        }
+        .opt-c .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 13px 28px;
+            background: white;
+            border: 1.5px solid #d6d3d1;
+            border-radius: 12px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            color: #44403c;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .opt-c .google-btn:hover {
+            border-color: #44403c;
+            background: #fafaf9;
+        }
+        .opt-c .footer {
+            margin-top: 32px;
+            font-size: 12px;
+            color: #d6d3d1;
+            font-weight: 500;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+
+        /* ============================================ */
+        /* OPTION D: Dark Premium (Space Grotesk)       */
+        /* ============================================ */
+        .opt-d {
+            background: #09090b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Space Grotesk', sans-serif;
+            position: relative;
+            overflow: hidden;
+        }
+        .opt-d::before {
+            content: '';
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%);
+            top: -100px;
+            right: -100px;
+        }
+        .opt-d::after {
+            content: '';
+            position: absolute;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(168,85,247,0.06) 0%, transparent 70%);
+            bottom: -80px;
+            left: -80px;
+        }
+        .opt-d .card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 24px;
+            padding: 52px 44px;
+            width: 400px;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+            backdrop-filter: blur(10px);
+        }
+        .opt-d .icon-wrap {
+            width: 52px;
+            height: 52px;
+            border: 1.5px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 18px;
+        }
+        .opt-d .icon-wrap svg {
+            width: 26px;
+            height: 26px;
+            color: #a78bfa;
+        }
+        .opt-d h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fafafa;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+        .opt-d .subtitle {
+            font-size: 14px;
+            color: #71717a;
+            line-height: 1.6;
+            margin-bottom: 36px;
+        }
+        .opt-d .google-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 32px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            color: #e4e4e7;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .opt-d .google-btn:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.2);
+        }
+        .opt-d .footer {
+            margin-top: 28px;
+            font-size: 12px;
+            color: #3f3f46;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        /* Google icon SVG */
+        .g-icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .options-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-title">Login Page - Design Options</div>
+<div class="page-subtitle">Pick a direction you like, or mix elements from multiple. Open this file in your browser.</div>
+
+<div class="options-grid">
+
+    <!-- OPTION A: Clean Minimal -->
+    <div class="option-wrapper">
+        <div class="option-label">Option A</div>
+        <div class="option-desc">Clean Minimal - Inter font, slate tones, understated icon</div>
+        <div class="preview-frame opt-a">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OPTION B: Bold Modern -->
+    <div class="option-wrapper">
+        <div class="option-label">Option B</div>
+        <div class="option-desc">Bold Modern - DM Sans font, vibrant gradient, dark CTA button</div>
+        <div class="preview-frame opt-b">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OPTION C: Warm Professional -->
+    <div class="option-wrapper">
+        <div class="option-label">Option C</div>
+        <div class="option-desc">Warm Professional - Jakarta Sans, light background, amber accent</div>
+        <div class="preview-frame opt-c">
+            <div class="card">
+                <div class="brand-row">
+                    <div class="icon-wrap">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                    </div>
+                    <h1>Timesheet Assistant</h1>
+                </div>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <div class="divider"></div>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- OPTION D: Dark Premium -->
+    <div class="option-wrapper">
+        <div class="option-label">Option D</div>
+        <div class="option-desc">Dark Premium - Space Grotesk, glassmorphism, subtle glow</div>
+        <div class="preview-frame opt-d">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>

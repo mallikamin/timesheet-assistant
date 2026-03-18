@@ -161,3 +161,76 @@ Open items:
 
 Impact on plan:
 - Phase 2: Calendar API BUILT. Ready to test and deploy.
+
+---
+
+## 2026-03-07 (Tariq — Async Messages)
+Attendees: Tariq Munir (voice note + text), Malik Amin (text)
+
+Context:
+- Sent Tariq: (1) timesheet demo, (2) another client's digital audit report as a sample of what we could do for Thrive.
+- Tariq's response on demo: "Thanks for this Amin. Appreciate this." — positive.
+- Tariq's response on audit report: "Thanks but this is not their requirement at this stage. However, will check with them definitely if they need it." — soft pass, door left open.
+- Tariq sent 2-min voice note: needs a ballpark figure for timelogging. Scope = Google Workspace functionality only, NOT the browser extension / non-Google activity capture.
+
+Pricing sent to Tariq:
+- Development: $3K-5K AUD
+- Per-user/month: $12-15 AUD (covers hosting, API, server, updates)
+
+Decisions:
+1. Digital audit parked — Tariq is not the buyer for that. Revisit when there's a direct line to Leilani (CEO) or leadership.
+2. Pricing scope = Phase 1-2 only (Google Workspace). Phase 3 (browser extension, desktop tracking) priced separately later.
+3. Tariq is presenting this to client — he may add his own margin on top.
+
+Open questions:
+1. Client's team size — affects monthly revenue projection.
+2. Harvest API token — still the #1 blocker for real integration.
+3. Does Tariq want a formal proposal or is the ballpark enough for now?
+
+Action items:
+1. [Tariq] Present ballpark to Thrive client. [Next few days]
+2. [Tariq] Provide Harvest API token. [Still pending]
+3. [Malik] Wait for client response on pricing before next build sprint.
+4. [Malik] Be ready to send formal proposal if Tariq asks.
+
+Sent to Tariq (2026-03-07):
+- Screenshots of architecture diagram + process flow (from poc/diagrams/architecture-for-tariq.html).
+- Shows: system architecture (5 layers), 8-step user journey, and Phase 1-2-3 roadmap.
+- Clearly scoped to Phase 1-2 (Google Workspace). Phase 3 shown as separate/future.
+
+Impact on plan:
+- Phase 1: COMPLETE and demo'd.
+- Phase 2: Paused on Harvest integration until token received. Calendar + Drive built.
+- Digital audit: PARKED. Ready to deploy when path to Leilani opens.
+
+---
+
+## 2026-03-18 (Demo Link Sent)
+Attendees: Malik Amin (dev)
+
+Action taken:
+1. Full system health check completed — all APIs functional, deployment live and stable.
+2. Demo link sent to Tariq: https://timesheet-assistant-jclk.onrender.com/
+3. User flow: Google sign-in → immediate access to AI assistant, Calendar sync, Drive sync.
+4. No setup required — zero-config demo ready for Thrive team testing.
+
+Current status:
+- Phase 1: COMPLETE and production-ready.
+- Phase 2: Calendar API ✓, Drive API ✓, Gmail pending, Harvest blocked on token.
+- System health: All green — 17 endpoints, 1,032 lines of code, zero errors.
+- Infrastructure: Render (live), Supabase (connected), Google Cloud (3 APIs active).
+
+Waiting on:
+1. Tariq's feedback on demo after team testing.
+2. Harvest API admin token (still blocking real integration).
+3. Client pricing approval ($3K-5K + $12-15/user/month).
+
+Next steps:
+1. [Tariq] Test demo with team, provide feedback. [Next 1-2 days]
+2. [Malik] Schedule follow-up call to discuss feedback. [~1 day from now]
+3. [Tariq] Provide Harvest API token if client approves. [Post-approval]
+
+Impact on plan:
+- Phase 1: Demo in client hands for validation.
+- Phase 2: Ready to implement Harvest integration once token provided.
+- Timeline: Waiting on client feedback to proceed.

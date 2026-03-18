@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python -c:*)",
+      "Bash(python app.py:*)",
+      "Bash(git init:*)",
+      "Bash(gh auth:*)",
+      "Bash(where:*)",
+      "Bash(git -C \"C:\\\\Users\\\\Malik\\\\desktop\\\\timelogging\" remote -v)",
+      "Bash(git config:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git rm:*)",
+      "Bash(python:*)",
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(start \"\" \"C:\\\\Users\\\\Malik\\\\desktop\\\\timelogging\\\\poc\\\\mockups\\\\login-options.html\")",
+      "Bash(start \"\" \"C:\\\\Users\\\\Malik\\\\desktop\\\\timelogging\\\\poc\\\\mockups\\\\login-explore-v2.html\")",
+      "Bash(start \"\" \"C:\\\\Users\\\\Malik\\\\desktop\\\\timelogging\\\\poc\\\\mockups\\\\login-b2-clocks.html\")",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" log --oneline -15)",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" diff --stat HEAD~1 HEAD)",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" status)",
+      "WebFetch(domain:support.google.com)",
+      "WebFetch(domain:developers.google.com)",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" add poc/sheets_sync.py)",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" commit -m \"$\\(cat <<''EOF''\nFix Google Sheets JSON parsing for Render env vars\nEOF\n\\)\")",
+      "Bash(git -C \"C:/Users/Malik/desktop/timelogging\" push)"
+    ]
+  }
+}

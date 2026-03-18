@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B2 Teal — Clock Icon Explorations</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Outfit', sans-serif; background: #f0f0f0; padding: 40px 20px; }
+        .page-title { text-align: center; font-size: 28px; font-weight: 700; color: #333; margin-bottom: 4px; }
+        .page-subtitle { text-align: center; font-size: 14px; color: #888; margin-bottom: 48px; }
+
+        .section-title {
+            text-align: center; font-size: 16px; font-weight: 700; color: #555;
+            margin: 48px 0 8px; text-transform: uppercase; letter-spacing: 2px;
+        }
+        .section-desc { text-align: center; font-size: 13px; color: #999; margin-bottom: 28px; }
+
+        /* Icon gallery */
+        .icon-gallery {
+            max-width: 1100px; margin: 0 auto 56px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 20px;
+        }
+        .icon-option {
+            background: white; border: 2px solid #e5e5e5; border-radius: 16px;
+            padding: 20px 12px; text-align: center; cursor: pointer; transition: all 0.2s;
+        }
+        .icon-option:hover { border-color: #0d9488; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(13,148,136,0.15); }
+        .icon-option .icon-preview {
+            width: 52px; height: 52px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 10px;
+            background: linear-gradient(135deg, #059669, #0d9488);
+            box-shadow: 0 3px 12px rgba(5,150,105,0.25);
+        }
+        .icon-option .icon-preview svg { width: 26px; height: 26px; }
+        .icon-option .icon-label { font-size: 11px; font-weight: 600; color: #555; line-height: 1.3; }
+
+        /* Full preview grid */
+        .options-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 48px; max-width: 1400px; margin: 0 auto;
+        }
+        .option-wrapper { text-align: center; }
+        .option-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .option-desc { font-size: 12px; color: #999; margin-bottom: 14px; }
+        .preview-frame {
+            width: 100%; height: 540px; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.12); position: relative;
+            background: linear-gradient(160deg, #059669 0%, #0d9488 40%, #0891b2 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Outfit', sans-serif;
+        }
+        .card {
+            background: rgba(255,255,255,0.97); backdrop-filter: blur(20px);
+            border-radius: 24px; padding: 48px 44px; width: 390px; text-align: center;
+        }
+        .card .icon-wrap {
+            width: 52px; height: 52px; background: linear-gradient(135deg, #059669, #0d9488);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px; box-shadow: 0 4px 16px rgba(5,150,105,0.3);
+        }
+        .card .icon-wrap svg { width: 26px; height: 26px; }
+        .card h1 { font-size: 23px; font-weight: 700; color: #064e3b; margin-bottom: 8px; }
+        .card .subtitle { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 36px; }
+        .card .subtitle strong { color: #059669; }
+        .card .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: #064e3b; border: none; border-radius: 12px;
+            font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600;
+            color: white; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .card .google-btn:hover { background: #065f46; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(6,78,59,0.3); }
+        .card .google-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+        .card .google-btn svg path { fill: white !important; }
+        .card .footer { margin-top: 28px; font-size: 12px; color: #9ca3af; font-weight: 500; }
+
+        /* Variant: circle icon */
+        .icon-circle { border-radius: 50% !important; }
+
+        /* Variant: larger icon */
+        .icon-lg { width: 60px !important; height: 60px !important; }
+        .icon-lg svg { width: 30px !important; height: 30px !important; }
+
+        @media (max-width: 900px) { .options-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="page-title">B2 Teal — Clock Icon Explorations</div>
+<div class="page-subtitle">Same B2 design, 12 different clock/time icon styles</div>
+
+<!-- ========== ICON GALLERY ========== -->
+<div class="section-title">All Clock Variants</div>
+<div class="section-desc">Hover to highlight. Full previews of the best ones below.</div>
+
+<div class="icon-gallery">
+
+    <!-- 1: Simple clock -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+            </svg>
+        </div>
+        <div class="icon-label">1. Simple Clock</div>
+    </div>
+
+    <!-- 2: Clock with ticks -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9.5"/>
+                <path d="M12 6.5v5.5l3.5 2"/>
+                <line x1="12" y1="2.5" x2="12" y2="4"/>
+                <line x1="12" y1="20" x2="12" y2="21.5"/>
+                <line x1="2.5" y1="12" x2="4" y2="12"/>
+                <line x1="20" y1="12" x2="21.5" y2="12"/>
+            </svg>
+        </div>
+        <div class="icon-label">2. Clock + 4 Ticks</div>
+    </div>
+
+    <!-- 3: Clock with all 12 ticks -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.6" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9.5"/>
+                <path d="M12 7v5l3 2"/>
+                <line x1="12" y1="2.5" x2="12" y2="3.8"/>
+                <line x1="12" y1="20.2" x2="12" y2="21.5"/>
+                <line x1="2.5" y1="12" x2="3.8" y2="12"/>
+                <line x1="20.2" y1="12" x2="21.5" y2="12"/>
+                <line x1="5.1" y1="5.1" x2="6" y2="6"/>
+                <line x1="18" y1="18" x2="18.9" y2="18.9"/>
+                <line x1="5.1" y1="18.9" x2="6" y2="18"/>
+                <line x1="18" y1="6" x2="18.9" y2="5.1"/>
+                <line x1="3.3" y1="8.5" x2="4.5" y2="9"/>
+                <line x1="19.5" y1="15" x2="20.7" y2="15.5"/>
+                <line x1="3.3" y1="15.5" x2="4.5" y2="15"/>
+                <line x1="19.5" y1="9" x2="20.7" y2="8.5"/>
+            </svg>
+        </div>
+        <div class="icon-label">3. Clock + 12 Ticks</div>
+    </div>
+
+    <!-- 4: Stopwatch -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="13" r="8.5"/>
+                <path d="M12 9v4l2.5 1.5"/>
+                <line x1="10" y1="2" x2="14" y2="2"/>
+                <line x1="12" y1="2" x2="12" y2="4.5"/>
+                <line x1="19.5" y1="6.5" x2="21" y2="5"/>
+            </svg>
+        </div>
+        <div class="icon-label">4. Stopwatch</div>
+    </div>
+
+    <!-- 5: Clock + checkmark -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 7.5 3.5"/>
+                <path d="M12 6v6l3 2"/>
+                <path d="M16 2l3 3 5-5" stroke-width="2"/>
+            </svg>
+        </div>
+        <div class="icon-label">5. Clock + Check</div>
+    </div>
+
+    <!-- 6: Clock with arrow (time tracking) -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9.5"/>
+                <path d="M12 6v6l4 2"/>
+                <path d="M21 7l1-4.5L17.5 4"/>
+            </svg>
+        </div>
+        <div class="icon-label">6. Clock + Arrow</div>
+    </div>
+
+    <!-- 7: Half-filled clock -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="9.5" stroke="white" stroke-width="1.8"/>
+                <path d="M12 2.5a9.5 9.5 0 0 1 0 19V2.5Z" fill="rgba(255,255,255,0.2)"/>
+                <path d="M12 6.5v5.5l3.5 2" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="icon-label">7. Half-Fill Clock</div>
+    </div>
+
+    <!-- 8: Dual-ring / timer -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9.5" stroke-width="1.4" opacity="0.3"/>
+                <path d="M12 2.5a9.5 9.5 0 0 1 8.2 4.75" stroke-width="2.2"/>
+                <path d="M12 7v5l3 2" stroke-width="1.8" stroke-linejoin="round"/>
+            </svg>
+        </div>
+        <div class="icon-label">8. Progress Ring</div>
+    </div>
+
+    <!-- 9: Clock face minimal (no circle, just hands + dots) -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="12" cy="12" r="9.5" stroke-width="1.8"/>
+                <line x1="12" y1="12" x2="12" y2="7"/>
+                <line x1="12" y1="12" x2="16" y2="14"/>
+                <circle cx="12" cy="12" r="1.2" fill="white" stroke="none"/>
+                <circle cx="12" cy="3.5" r="1" fill="white" stroke="none"/>
+                <circle cx="20.5" cy="12" r="1" fill="white" stroke="none"/>
+                <circle cx="12" cy="20.5" r="1" fill="white" stroke="none"/>
+                <circle cx="3.5" cy="12" r="1" fill="white" stroke="none"/>
+            </svg>
+        </div>
+        <div class="icon-label">9. Dot Markers</div>
+    </div>
+
+    <!-- 10: Clock + person (timesheet logging) -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="14" cy="12" r="8"/>
+                <path d="M14 8v4l2.5 1.5"/>
+                <circle cx="5.5" cy="6" r="2.5"/>
+                <path d="M1 15.5c0-2.5 2-4 4.5-4"/>
+            </svg>
+        </div>
+        <div class="icon-label">10. Clock + Person</div>
+    </div>
+
+    <!-- 11: Hourglass -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 3h14"/>
+                <path d="M5 21h14"/>
+                <path d="M7 3v4.5c0 1.5 1 3 2.5 3.8L12 12.5l2.5-1.2C16 10.5 17 9 17 7.5V3"/>
+                <path d="M7 21v-4.5c0-1.5 1-3 2.5-3.8l2.5-1.2 2.5 1.2c1.5.8 2.5 2.3 2.5 3.8V21"/>
+            </svg>
+        </div>
+        <div class="icon-label">11. Hourglass</div>
+    </div>
+
+    <!-- 12: Speedometer/gauge -->
+    <div class="icon-option">
+        <div class="icon-preview">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10"/>
+                <path d="M12 6v2"/>
+                <path d="M6 12h2"/>
+                <path d="M7 7l1.5 1.5"/>
+                <line x1="12" y1="12" x2="15.5" y2="8.5" stroke-width="2.2"/>
+                <circle cx="12" cy="12" r="1.2" fill="white" stroke="none"/>
+            </svg>
+        </div>
+        <div class="icon-label">12. Gauge/Speed</div>
+    </div>
+
+</div>
+
+<!-- ========== FULL PREVIEWS ========== -->
+<div class="section-title">Full Previews — Top Picks in B2</div>
+<div class="section-desc">The strongest clock icons rendered in the full B2 Teal login</div>
+
+<div class="options-grid">
+
+    <!-- Preview: Clock + 4 Ticks (square) -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #2 — Clock + 4 Ticks</div>
+        <div class="option-desc">Clean, professional, recognisable at any size</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="9.5"/>
+                        <path d="M12 6.5v5.5l3.5 2"/>
+                        <line x1="12" y1="2.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="21.5"/>
+                        <line x1="2.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="21.5" y2="12"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview: Stopwatch -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #4 — Stopwatch</div>
+        <div class="option-desc">Time-tracking energy, active feel</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="13" r="8.5"/>
+                        <path d="M12 9v4l2.5 1.5"/>
+                        <line x1="10" y1="2" x2="14" y2="2"/>
+                        <line x1="12" y1="2" x2="12" y2="4.5"/>
+                        <line x1="19.5" y1="6.5" x2="21" y2="5"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview: Progress Ring -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #8 — Progress Ring</div>
+        <div class="option-desc">Modern, implies tracking progress over time</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="9.5" stroke-width="1.4" opacity="0.3"/>
+                        <path d="M12 2.5a9.5 9.5 0 0 1 8.2 4.75" stroke-width="2.2"/>
+                        <path d="M12 7v5l3 2" stroke-width="1.8" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview: Dot Markers -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #9 — Dot Markers</div>
+        <div class="option-desc">Premium watch-face feel, distinctive</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="9.5"/>
+                        <line x1="12" y1="12" x2="12" y2="7"/>
+                        <line x1="12" y1="12" x2="16" y2="14"/>
+                        <circle cx="12" cy="12" r="1.2" fill="white" stroke="none"/>
+                        <circle cx="12" cy="3.5" r="1" fill="white" stroke="none"/>
+                        <circle cx="20.5" cy="12" r="1" fill="white" stroke="none"/>
+                        <circle cx="12" cy="20.5" r="1" fill="white" stroke="none"/>
+                        <circle cx="3.5" cy="12" r="1" fill="white" stroke="none"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview: Hourglass -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #11 — Hourglass</div>
+        <div class="option-desc">Classic time symbol, unique among SaaS tools</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 3h14"/><path d="M5 21h14"/>
+                        <path d="M7 3v4.5c0 1.5 1 3 2.5 3.8L12 12.5l2.5-1.2C16 10.5 17 9 17 7.5V3"/>
+                        <path d="M7 21v-4.5c0-1.5 1-3 2.5-3.8l2.5-1.2 2.5 1.2c1.5.8 2.5 2.3 2.5 3.8V21"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview: Clock + Check -->
+    <div class="option-wrapper">
+        <div class="option-label">Icon #5 — Clock + Checkmark</div>
+        <div class="option-desc">Time logged = done, approval/completion feel</div>
+        <div class="preview-frame">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12A10 10 0 1 1 12 2a10 10 0 0 1 7.5 3.5"/>
+                        <path d="M12 6v6l3 2"/>
+                        <path d="M16 2l3 3 5-5" stroke-width="2"/>
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Time Logging Automation - Master Notes
 
-Last updated: 2026-03-05
+Last updated: 2026-03-07
 
 ## North Star
 Reach 80-90% automated time logging with high audit quality while keeping Harvest/team lead approval flow unchanged.
@@ -124,7 +124,28 @@ AI voice/text timesheet assistant as a simple web page.
 - Google SSO for authentication.
 - Supabase for persistence + Google Sheet for visibility.
 
+## Commercial (2026-03-07)
+- **Scope quoted**: Phase 1-2 (Google Workspace only, no browser extension)
+- **Development**: $3K-5K AUD
+- **Per-user/month**: $12-15 AUD (hosting, API, server, updates)
+- **Quoted to**: Tariq Munir (he's presenting to Thrive client, may add his margin)
+- **Status**: Ballpark sent, awaiting client response
+
+## Sent to Tariq
+- Timesheet demo (live URL)
+- Architecture diagram + process flow screenshots (poc/diagrams/architecture-for-tariq.html)
+- Ballpark pricing: $3K-5K dev + $12-15/user/month
+- Scope: Phase 1-2 (Google Workspace only). Phase 3 (browser ext, desktop) priced separately.
+
+## Current Status (2026-03-18)
+- **Demo link sent to Tariq**: https://timesheet-assistant-jclk.onrender.com/
+- **System status**: ✅ All green — live, stable, fully functional
+- **Waiting for**: Tariq's feedback after team testing
+- **Next step**: Follow-up call in ~1 day to discuss feedback
+
 ## Waiting On (from client)
+- Client response on pricing ballpark.
+- Tariq's feedback on demo testing.
 - Harvest API admin token.
 - Full project/task list export.
 - Google Cloud / Gemini API access.

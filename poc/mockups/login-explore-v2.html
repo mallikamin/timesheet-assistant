@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Page - B & D Explorations + Icon Options</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'DM Sans', sans-serif; background: #f0f0f0; padding: 40px 20px; }
+        .page-title { text-align: center; font-size: 28px; font-weight: 700; color: #333; margin-bottom: 4px; }
+        .page-subtitle { text-align: center; font-size: 14px; color: #888; margin-bottom: 48px; }
+
+        .section-title {
+            text-align: center; font-size: 18px; font-weight: 700; color: #555;
+            margin: 48px 0 8px; text-transform: uppercase; letter-spacing: 2px;
+        }
+        .section-desc {
+            text-align: center; font-size: 13px; color: #999; margin-bottom: 32px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+            gap: 48px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .option-wrapper { text-align: center; }
+        .option-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1.5px; }
+        .option-desc { font-size: 12px; color: #999; margin-bottom: 14px; }
+        .preview-frame {
+            width: 100%; height: 560px; border-radius: 16px; overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.12); position: relative;
+        }
+
+        .g-icon { width: 20px; height: 20px; flex-shrink: 0; }
+
+        /* Icon gallery */
+        .icon-gallery {
+            max-width: 1000px; margin: 0 auto 64px;
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 24px;
+        }
+        .icon-option {
+            background: white; border: 2px solid #e5e5e5; border-radius: 16px;
+            padding: 24px 16px; text-align: center; cursor: pointer; transition: all 0.2s;
+        }
+        .icon-option:hover { border-color: #7c3aed; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(124,58,237,0.15); }
+        .icon-option .icon-preview {
+            width: 56px; height: 56px; border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 12px;
+        }
+        .icon-option .icon-preview svg { width: 28px; height: 28px; }
+        .icon-option .icon-label { font-size: 12px; font-weight: 600; color: #555; }
+
+        /* ============================================ */
+        /* B1: Bold Gradient — Indigo/Purple            */
+        /* ============================================ */
+        .opt-b1 {
+            background: linear-gradient(160deg, #7c3aed 0%, #4f46e5 40%, #2563eb 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'DM Sans', sans-serif;
+        }
+        .opt-b1 .card {
+            background: rgba(255,255,255,0.95); backdrop-filter: blur(20px);
+            border-radius: 24px; padding: 52px 44px; width: 390px; text-align: center;
+        }
+        .opt-b1 .icon-wrap {
+            width: 56px; height: 56px;
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            border-radius: 14px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px; box-shadow: 0 4px 16px rgba(124, 58, 237, 0.3);
+        }
+        .opt-b1 .icon-wrap svg { width: 28px; height: 28px; color: white; }
+        .opt-b1 h1 { font-size: 24px; font-weight: 700; color: #1e1b4b; margin-bottom: 8px; }
+        .opt-b1 .subtitle { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 36px; }
+        .opt-b1 .subtitle strong { color: #4f46e5; }
+        .opt-b1 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: #1e1b4b; border: none; border-radius: 12px;
+            font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600;
+            color: white; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-b1 .google-btn:hover { background: #312e81; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(30,27,75,0.3); }
+        .opt-b1 .google-btn svg path { fill: white !important; }
+        .opt-b1 .footer { margin-top: 28px; font-size: 12px; color: #9ca3af; font-weight: 500; }
+
+        /* ============================================ */
+        /* B2: Bold — Teal/Emerald gradient             */
+        /* ============================================ */
+        .opt-b2 {
+            background: linear-gradient(160deg, #059669 0%, #0d9488 40%, #0891b2 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Outfit', sans-serif;
+        }
+        .opt-b2 .card {
+            background: rgba(255,255,255,0.97); backdrop-filter: blur(20px);
+            border-radius: 24px; padding: 52px 44px; width: 390px; text-align: center;
+        }
+        .opt-b2 .logo-mark {
+            width: 52px; height: 52px; background: linear-gradient(135deg, #059669, #0d9488);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px; box-shadow: 0 4px 16px rgba(5,150,105,0.3);
+            font-size: 22px; font-weight: 800; color: white; font-family: 'Outfit', sans-serif;
+        }
+        .opt-b2 h1 { font-size: 23px; font-weight: 700; color: #064e3b; margin-bottom: 8px; }
+        .opt-b2 .subtitle { font-size: 14px; color: #6b7280; line-height: 1.6; margin-bottom: 36px; }
+        .opt-b2 .subtitle strong { color: #059669; }
+        .opt-b2 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: #064e3b; border: none; border-radius: 12px;
+            font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 600;
+            color: white; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-b2 .google-btn:hover { background: #065f46; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(6,78,59,0.3); }
+        .opt-b2 .google-btn svg path { fill: white !important; }
+        .opt-b2 .footer { margin-top: 28px; font-size: 12px; color: #9ca3af; font-weight: 500; }
+
+        /* ============================================ */
+        /* B3: Bold — Warm Orange/Amber                 */
+        /* ============================================ */
+        .opt-b3 {
+            background: linear-gradient(160deg, #ea580c 0%, #d97706 50%, #ca8a04 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Manrope', sans-serif;
+        }
+        .opt-b3 .card {
+            background: rgba(255,255,255,0.96); backdrop-filter: blur(20px);
+            border-radius: 24px; padding: 52px 44px; width: 390px; text-align: center;
+        }
+        .opt-b3 .icon-wrap {
+            width: 56px; height: 56px;
+            background: linear-gradient(135deg, #ea580c, #d97706);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px; box-shadow: 0 4px 16px rgba(234,88,12,0.3);
+        }
+        .opt-b3 .icon-wrap svg { width: 26px; height: 26px; color: white; }
+        .opt-b3 h1 { font-size: 24px; font-weight: 800; color: #431407; margin-bottom: 8px; }
+        .opt-b3 .subtitle { font-size: 14px; color: #78716c; line-height: 1.6; margin-bottom: 36px; }
+        .opt-b3 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: #431407; border: none; border-radius: 12px;
+            font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 700;
+            color: white; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-b3 .google-btn:hover { background: #7c2d12; transform: translateY(-1px); }
+        .opt-b3 .google-btn svg path { fill: white !important; }
+        .opt-b3 .footer { margin-top: 28px; font-size: 12px; color: #a8a29e; font-weight: 600; }
+
+        /* ============================================ */
+        /* D1: Dark Premium — Space Grotesk, blue glow  */
+        /* ============================================ */
+        .opt-d1 {
+            background: #09090b; display: flex; align-items: center; justify-content: center;
+            font-family: 'Space Grotesk', sans-serif; position: relative; overflow: hidden;
+        }
+        .opt-d1::before {
+            content: ''; position: absolute; width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%);
+            top: -100px; right: -100px;
+        }
+        .opt-d1::after {
+            content: ''; position: absolute; width: 400px; height: 400px;
+            background: radial-gradient(circle, rgba(168,85,247,0.07) 0%, transparent 70%);
+            bottom: -80px; left: -80px;
+        }
+        .opt-d1 .card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 24px; padding: 52px 44px; width: 400px; text-align: center;
+            position: relative; z-index: 1; backdrop-filter: blur(10px);
+        }
+        .opt-d1 .icon-wrap {
+            width: 52px; height: 52px; border: 1.5px solid rgba(255,255,255,0.12);
+            border-radius: 14px; display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px;
+        }
+        .opt-d1 .icon-wrap svg { width: 26px; height: 26px; color: #a78bfa; }
+        .opt-d1 h1 { font-size: 24px; font-weight: 700; color: #fafafa; margin-bottom: 8px; letter-spacing: -0.5px; }
+        .opt-d1 .subtitle { font-size: 14px; color: #71717a; line-height: 1.6; margin-bottom: 36px; }
+        .opt-d1 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 500;
+            color: #e4e4e7; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-d1 .google-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+        .opt-d1 .footer { margin-top: 28px; font-size: 12px; color: #3f3f46; font-weight: 500; letter-spacing: 0.5px; }
+
+        /* ============================================ */
+        /* D2: Dark — Sora font, green accent           */
+        /* ============================================ */
+        .opt-d2 {
+            background: #0a0a0a; display: flex; align-items: center; justify-content: center;
+            font-family: 'Sora', sans-serif; position: relative; overflow: hidden;
+        }
+        .opt-d2::before {
+            content: ''; position: absolute; width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(16,185,129,0.07) 0%, transparent 60%);
+            top: -200px; left: 50%; transform: translateX(-50%);
+        }
+        .opt-d2 .card {
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 28px; padding: 56px 48px; width: 400px; text-align: center;
+            position: relative; z-index: 1;
+        }
+        .opt-d2 .icon-wrap {
+            width: 48px; height: 48px; background: rgba(16,185,129,0.1);
+            border: 1px solid rgba(16,185,129,0.2); border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 20px;
+        }
+        .opt-d2 .icon-wrap svg { width: 24px; height: 24px; color: #34d399; }
+        .opt-d2 h1 { font-size: 22px; font-weight: 700; color: #f5f5f5; margin-bottom: 8px; letter-spacing: -0.3px; }
+        .opt-d2 .subtitle { font-size: 13px; color: #52525b; line-height: 1.7; margin-bottom: 40px; }
+        .opt-d2 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 13px 30px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);
+            border-radius: 12px; font-family: 'Sora', sans-serif; font-size: 14px; font-weight: 500;
+            color: #d4d4d8; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-d2 .google-btn:hover { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.35); }
+        .opt-d2 .footer { margin-top: 32px; font-size: 11px; color: #27272a; font-weight: 500; letter-spacing: 1px; text-transform: uppercase; }
+
+        /* ============================================ */
+        /* D3: Dark — Manrope, warm amber glow          */
+        /* ============================================ */
+        .opt-d3 {
+            background: #0c0a09; display: flex; align-items: center; justify-content: center;
+            font-family: 'Manrope', sans-serif; position: relative; overflow: hidden;
+        }
+        .opt-d3::before {
+            content: ''; position: absolute; width: 500px; height: 500px;
+            background: radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 60%);
+            bottom: -150px; right: -100px;
+        }
+        .opt-d3 .card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 24px; padding: 52px 44px; width: 400px; text-align: center;
+            position: relative; z-index: 1; backdrop-filter: blur(8px);
+        }
+        .opt-d3 .logo-row {
+            display: flex; align-items: center; justify-content: center; gap: 14px;
+            margin-bottom: 12px;
+        }
+        .opt-d3 .icon-wrap {
+            width: 44px; height: 44px; background: linear-gradient(135deg, #f59e0b, #d97706);
+            border-radius: 10px; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 12px rgba(245,158,11,0.25);
+        }
+        .opt-d3 .icon-wrap svg { width: 22px; height: 22px; color: white; }
+        .opt-d3 h1 { font-size: 22px; font-weight: 700; color: #fafaf9; letter-spacing: -0.3px; }
+        .opt-d3 .subtitle { font-size: 13px; color: #57534e; line-height: 1.7; margin-bottom: 36px; }
+        .opt-d3 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: linear-gradient(135deg, #f59e0b, #d97706);
+            border: none; border-radius: 12px;
+            font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700;
+            color: #1c1917; cursor: pointer; text-decoration: none; transition: all 0.2s;
+            box-shadow: 0 4px 16px rgba(245,158,11,0.2);
+        }
+        .opt-d3 .google-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(245,158,11,0.3); }
+        .opt-d3 .footer { margin-top: 28px; font-size: 11px; color: #44403c; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+
+        /* ============================================ */
+        /* BD1: Hybrid — Dark card on gradient bg       */
+        /* ============================================ */
+        .opt-bd1 {
+            background: linear-gradient(160deg, #7c3aed 0%, #3b82f6 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'Space Grotesk', sans-serif; position: relative; overflow: hidden;
+        }
+        .opt-bd1::before {
+            content: ''; position: absolute; inset: 0;
+            background: radial-gradient(ellipse at top left, rgba(255,255,255,0.1) 0%, transparent 50%);
+        }
+        .opt-bd1 .card {
+            background: rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 24px; padding: 52px 44px; width: 400px; text-align: center;
+            position: relative; z-index: 1; backdrop-filter: blur(20px);
+        }
+        .opt-bd1 .icon-wrap {
+            width: 52px; height: 52px; background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 14px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 18px;
+        }
+        .opt-bd1 .icon-wrap svg { width: 26px; height: 26px; color: #c4b5fd; }
+        .opt-bd1 h1 { font-size: 24px; font-weight: 700; color: white; margin-bottom: 8px; letter-spacing: -0.5px; }
+        .opt-bd1 .subtitle { font-size: 14px; color: rgba(255,255,255,0.5); line-height: 1.6; margin-bottom: 36px; }
+        .opt-bd1 .google-btn {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 14px 32px; background: white; border: none; border-radius: 12px;
+            font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600;
+            color: #1e1b4b; cursor: pointer; text-decoration: none; transition: all 0.2s;
+        }
+        .opt-bd1 .google-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(0,0,0,0.2); }
+        .opt-bd1 .footer { margin-top: 28px; font-size: 12px; color: rgba(255,255,255,0.25); font-weight: 500; letter-spacing: 0.5px; }
+
+        @media (max-width: 900px) { .options-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="page-title">Timesheet Assistant - Login Explorations</div>
+<div class="page-subtitle">Based on your preference for B (Bold Modern) and D (Dark Premium)</div>
+
+<!-- ========== ICON GALLERY ========== -->
+<div class="section-title">Icon Options</div>
+<div class="section-desc">Different icon concepts for the app identity. Any can go into any design below.</div>
+
+<div class="icon-gallery">
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+        </div>
+        <div class="icon-label">Clock (clean)</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2" />
+                <circle cx="12" cy="12" r="10" stroke="white" stroke-width="1.8" fill="none"/>
+                <line x1="12" y1="2" x2="12" y2="4" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="12" y1="20" x2="12" y2="22" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="2" y1="12" x2="4" y2="12" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="20" y1="12" x2="22" y2="12" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <div class="icon-label">Clock (detailed)</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 1.5h6M12 1.5v2" />
+            </svg>
+        </div>
+        <div class="icon-label">Stopwatch</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+        </div>
+        <div class="icon-label">Timesheet/Doc</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+            </svg>
+        </div>
+        <div class="icon-label">Microphone</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+            </svg>
+        </div>
+        <div class="icon-label">Chat/Voice</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <text x="4" y="20" font-family="Space Grotesk, sans-serif" font-size="16" font-weight="700" fill="white">TA</text>
+            </svg>
+        </div>
+        <div class="icon-label">Monogram "TA"</div>
+    </div>
+    <div class="icon-option">
+        <div class="icon-preview" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="white">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+            </svg>
+        </div>
+        <div class="icon-label">Lines (abstract)</div>
+    </div>
+</div>
+
+<!-- ========== B VARIATIONS ========== -->
+<div class="section-title">Bold Modern (B) Variations</div>
+<div class="section-desc">Vibrant gradients, strong cards, dark CTA buttons</div>
+
+<div class="options-grid">
+
+    <!-- B1: Original Indigo -->
+    <div class="option-wrapper">
+        <div class="option-label">B1 — Indigo Gradient + Mic Icon</div>
+        <div class="option-desc">DM Sans / Voice-first identity</div>
+        <div class="preview-frame opt-b1">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- B2: Teal -->
+    <div class="option-wrapper">
+        <div class="option-label">B2 — Teal Gradient + "TA" Monogram</div>
+        <div class="option-desc">Outfit font / Fresh, professional</div>
+        <div class="preview-frame opt-b2">
+            <div class="card">
+                <div class="logo-mark">TA</div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate what you worked on.<br><strong>AI logs it in Harvest</strong> for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- B3: Warm Orange -->
+    <div class="option-wrapper">
+        <div class="option-label">B3 — Amber Gradient + Timesheet Icon</div>
+        <div class="option-desc">Manrope font / Warm, energetic (Harvest colours)</div>
+        <div class="preview-frame opt-b3">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Continue with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== D VARIATIONS ========== -->
+<div class="section-title">Dark Premium (D) Variations</div>
+<div class="section-desc">Dark backgrounds, glass cards, subtle accent glows</div>
+
+<div class="options-grid">
+
+    <!-- D1: Purple glow -->
+    <div class="option-wrapper">
+        <div class="option-label">D1 — Purple Glow + Clock</div>
+        <div class="option-desc">Space Grotesk / Original D refined</div>
+        <div class="preview-frame opt-d1">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- D2: Green accent -->
+    <div class="option-wrapper">
+        <div class="option-label">D2 — Emerald Glow + Chat Icon</div>
+        <div class="option-desc">Sora font / Conversational AI feel</div>
+        <div class="preview-frame opt-d2">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- D3: Amber glow -->
+    <div class="option-wrapper">
+        <div class="option-label">D3 — Amber Glow + Inline Logo</div>
+        <div class="option-desc">Manrope font / Warm dark, Harvest-aligned colours</div>
+        <div class="preview-frame opt-d3">
+            <div class="card">
+                <div class="logo-row">
+                    <div class="icon-wrap">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                        </svg>
+                    </div>
+                    <h1>Timesheet Assistant</h1>
+                </div>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#1c1917" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#1c1917" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#1c1917" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#1c1917" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- BD1: Hybrid -->
+    <div class="option-wrapper">
+        <div class="option-label">BD1 — Hybrid: Gradient BG + Dark Card</div>
+        <div class="option-desc">Space Grotesk / Best of both worlds</div>
+        <div class="preview-frame opt-bd1">
+            <div class="card">
+                <div class="icon-wrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                    </svg>
+                </div>
+                <h1>Timesheet Assistant</h1>
+                <p class="subtitle">Dictate to your timesheet assistant.<br>It logs it in Harvest for you.</p>
+                <a href="#" class="google-btn">
+                    <svg class="g-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                    Sign in with Google
+                </a>
+                <p class="footer">Thrive PR + Communications</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
