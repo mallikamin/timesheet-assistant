@@ -307,6 +307,10 @@
             background: #fff3e0;
             color: #e65100;
         }
+        .entry-status.harvest-synced {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
         .entry-notes {
             font-size: 12px;
             color: #777;
@@ -569,6 +573,7 @@ What have you been up to?</div>
                     <div class="entry-meta">
                         <span class="entry-hours">${entry.hours}h \u2022 ${entry.task}</span>
                         <span class="entry-status ${statusClass}">${entry.status}</span>
+                        ${entry.harvest_id ? '<span class="entry-status harvest-synced">Harvest</span>' : ''}
                     </div>
                     <div class="entry-notes">${entry.notes}</div>
                     <div class="entry-date">${dateStr}</div>

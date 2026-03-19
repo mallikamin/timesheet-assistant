@@ -1,13 +1,14 @@
 """
 Harvest project/task mapping engine.
+Pulls live data from Harvest API when available, falls back to hardcoded.
 Structure: Client = Project, with multiple Tasks underneath.
-See /harvest-structure.md for full documentation.
 """
 from typing import Dict, List
 
-# Harvest structure: each entry is a project (= client) with its tasks.
-# Update this when Tariq provides the full Harvest export.
-HARVEST_PROJECTS = [
+import harvest_api
+
+# Hardcoded fallback — used when Harvest API is not configured or unavailable
+HARVEST_PROJECTS_FALLBACK = [
     {
         "project": "Acuity",
         "keywords": ["acuity"],
@@ -35,7 +36,6 @@ HARVEST_PROJECTS = [
             {"code": "AGL-001", "name": "Existing Growth", "keywords": ["growth", "existing"]},
         ],
     },
-    # Dummy projects for POC testing
     {
         "project": "CommBank",
         "keywords": ["commbank", "commonwealth", "cba"],
@@ -61,10 +61,58 @@ HARVEST_PROJECTS = [
 ]
 
 
+def _load_from_harvest() -> List[Dict]:
+    """Pull live project/task data from Harvest API and format for the prompt."""
+    if not harvest_api.is_configured():
+        return []
+
+    projects = harvest_api.get_projects_with_tasks()
+    if not projects:
+        return []
+
+    result = []
+    for p in projects:
+        # Skip the default Example Project
+        if p["project_name"] == "Example Project":
+            continue
+        # Filter to only our custom tasks (skip Harvest defaults like Design, Programming)
+        default_tasks = {"Design", "Programming", "Marketing", "Project Management", "Vacation"}
+        custom_tasks = [t for t in p["tasks"] if t["task_name"] not in default_tasks]
+
+        if not custom_tasks:
+            continue
+
+        result.append({
+            "project": p["project_name"],
+            "keywords": [p["project_name"].lower().split("(")[0].strip()],
+            "tasks": [
+                {
+                    "code": f"{p['project_id']}-{t['task_id']}",
+                    "name": t["task_name"],
+                    "keywords": [w.lower() for w in t["task_name"].split() if len(w) > 2],
+                    "harvest_project_id": p["project_id"],
+                    "harvest_task_id": t["task_id"],
+                }
+                for t in custom_tasks
+            ],
+        })
+
+    return result
+
+
+def get_projects() -> List[Dict]:
+    """Get project list — live from Harvest if available, otherwise fallback."""
+    live = _load_from_harvest()
+    if live:
+        return live
+    return HARVEST_PROJECTS_FALLBACK
+
+
 def get_all_projects_for_prompt() -> str:
     """Format all projects and their tasks for the AI system prompt."""
+    projects = get_projects()
     lines = []
-    for p in HARVEST_PROJECTS:
+    for p in projects:
         lines.append(f"\nProject: {p['project']}")
         for t in p["tasks"]:
             lines.append(f"  [{t['code']}] {t['name']}")

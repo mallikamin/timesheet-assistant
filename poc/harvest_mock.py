@@ -55,6 +55,7 @@ def create_draft_entry(
     # Remap for frontend compatibility
     row["user"] = row.pop("user_name", user)
     row["date"] = row.pop("entry_date", entry["entry_date"])
+    row.setdefault("harvest_id", None)
     return row
 
 
@@ -73,6 +74,7 @@ def get_entries(user: str = None, entry_date: str = None) -> List[Dict]:
     for e in entries:
         e["user"] = e.pop("user_name", "")
         e["date"] = e.pop("entry_date", "")
+        e.setdefault("harvest_id", None)
     return entries
 
 
@@ -84,12 +86,15 @@ def update_entry(entry_id: str, **kwargs) -> Optional[Dict]:
         kwargs["entry_date"] = kwargs.pop("date")
     if "user" in kwargs:
         kwargs["user_name"] = kwargs.pop("user")
-    result = sb.table("time_entries").update(kwargs).eq("id", entry_id).execute()
-    if result.data:
-        row = result.data[0]
-        row["user"] = row.pop("user_name", "")
-        row["date"] = row.pop("entry_date", "")
-        return row
+    try:
+        result = sb.table("time_entries").update(kwargs).eq("id", entry_id).execute()
+        if result.data:
+            row = result.data[0]
+            row["user"] = row.pop("user_name", "")
+            row["date"] = row.pop("entry_date", "")
+            return row
+    except Exception as e:
+        print(f"update_entry error (may need harvest_id column): {e}")
     return None
 
 

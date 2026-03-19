@@ -21,6 +21,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import calendar_sync
 import drive_sync
+import harvest_api
 import harvest_mock
 import sheets_sync
 from project_mapping import get_all_projects_for_prompt
@@ -129,6 +130,35 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     entries_created: List[Dict] = []
+
+
+def save_entry_everywhere(user: str, entry_data: Dict) -> Dict:
+    """Save an entry to Supabase, Google Sheets, and Harvest."""
+    entry = harvest_mock.create_draft_entry(
+        user=user,
+        client=entry_data.get("client", "Unknown"),
+        project_code=entry_data.get("project_code", ""),
+        project_name=entry_data.get("project_name", ""),
+        task=entry_data.get("task", "General"),
+        hours=float(entry_data.get("hours", 0)),
+        notes=entry_data.get("notes", ""),
+        entry_date=entry_data.get("date", date.today().isoformat()),
+        status=entry_data.get("status", "Draft"),
+    )
+    # Sync to Google Sheet
+    sheets_sync.sync_entry_to_sheet(entry)
+    # Push to Harvest
+    harvest_entry = harvest_api.push_entry(
+        client_name=entry_data.get("client", ""),
+        task_name=entry_data.get("project_name", entry_data.get("task", "")),
+        spent_date=entry_data.get("date", date.today().isoformat()),
+        hours=float(entry_data.get("hours", 0)),
+        notes=entry_data.get("notes", ""),
+    )
+    if harvest_entry:
+        entry["harvest_id"] = harvest_entry["id"]
+        harvest_mock.update_entry(entry["id"], harvest_id=harvest_entry["id"])
+    return entry
 
 
 def parse_entries_from_response(text: str) -> Tuple[str, List[Dict]]:
@@ -240,23 +270,11 @@ async def chat(req: ChatRequest, request: Request):
     harvest_mock.save_chat_message(req.user, "user", req.message)
     harvest_mock.save_chat_message(req.user, "assistant", display_text)
 
-    # Save entries to Supabase
+    # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = harvest_mock.create_draft_entry(
-            user=req.user,
-            client=entry_data.get("client", "Unknown"),
-            project_code=entry_data.get("project_code", ""),
-            project_name=entry_data.get("project_name", ""),
-            task=entry_data.get("task", "General"),
-            hours=float(entry_data.get("hours", 0)),
-            notes=entry_data.get("notes", ""),
-            entry_date=entry_data.get("date", date.today().isoformat()),
-            status=entry_data.get("status", "Draft"),
-        )
+        entry = save_entry_everywhere(req.user, entry_data)
         created_entries.append(entry)
-        # Sync to Google Sheet
-        sheets_sync.sync_entry_to_sheet(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
 
@@ -270,9 +288,18 @@ async def get_entries(user: str, entry_date: str = None):
 
 @app.delete("/api/entries/{entry_id}")
 async def delete_entry(entry_id: str):
+    # Check if entry has a Harvest ID before deleting
+    entries = harvest_mock.get_entries()
+    harvest_id = None
+    for e in entries:
+        if e.get("id") == entry_id and e.get("harvest_id"):
+            harvest_id = e["harvest_id"]
+            break
     success = harvest_mock.delete_entry(entry_id)
     if success:
         sheets_sync.delete_entry_from_sheet(entry_id)
+        if harvest_id:
+            harvest_api.delete_time_entry(int(harvest_id))
     return {"success": success}
 
 
@@ -367,22 +394,11 @@ async def suggest_from_calendar(request: Request):
     harvest_mock.save_chat_message(user["name"], "user", calendar_prompt)
     harvest_mock.save_chat_message(user["name"], "assistant", display_text)
 
-    # Save entries
+    # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = harvest_mock.create_draft_entry(
-            user=user["name"],
-            client=entry_data.get("client", "Unknown"),
-            project_code=entry_data.get("project_code", ""),
-            project_name=entry_data.get("project_name", ""),
-            task=entry_data.get("task", "General"),
-            hours=float(entry_data.get("hours", 0)),
-            notes=entry_data.get("notes", ""),
-            entry_date=entry_data.get("date", date.today().isoformat()),
-            status=entry_data.get("status", "Draft"),
-        )
+        entry = save_entry_everywhere(user["name"], entry_data)
         created_entries.append(entry)
-        sheets_sync.sync_entry_to_sheet(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
 
@@ -446,21 +462,11 @@ async def suggest_from_drive(request: Request):
     harvest_mock.save_chat_message(user["name"], "user", drive_prompt)
     harvest_mock.save_chat_message(user["name"], "assistant", display_text)
 
+    # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = harvest_mock.create_draft_entry(
-            user=user["name"],
-            client=entry_data.get("client", "Unknown"),
-            project_code=entry_data.get("project_code", ""),
-            project_name=entry_data.get("project_name", ""),
-            task=entry_data.get("task", "General"),
-            hours=float(entry_data.get("hours", 0)),
-            notes=entry_data.get("notes", ""),
-            entry_date=entry_data.get("date", date.today().isoformat()),
-            status=entry_data.get("status", "Draft"),
-        )
+        entry = save_entry_everywhere(user["name"], entry_data)
         created_entries.append(entry)
-        sheets_sync.sync_entry_to_sheet(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
 
