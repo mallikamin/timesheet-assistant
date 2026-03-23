@@ -187,10 +187,14 @@ def parse_entries_from_response(text: str) -> Tuple[str, List[Dict]]:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    user = get_current_user(request)
-    if user:
-        return RedirectResponse(url="/")
-    return templates.TemplateResponse("login.html", {"request": request})
+    try:
+        user = get_current_user(request)
+        if user:
+            return RedirectResponse(url="/")
+        return templates.TemplateResponse("login.html", {"request": request})
+    except Exception as e:
+        import traceback
+        return HTMLResponse(f"<pre>Login error: {e}\n\n{traceback.format_exc()}</pre>", status_code=500)
 
 
 @app.get("/auth/google")
