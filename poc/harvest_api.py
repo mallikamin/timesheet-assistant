@@ -14,6 +14,8 @@ HARVEST_BASE = "https://api.harvestapp.com/api/v2"
 # Cache for project/task mapping
 _project_cache = None
 _cache_time = 0
+_user_cache = None
+_user_cache_time = 0
 CACHE_TTL = 300  # 5 minutes
 
 
@@ -29,6 +31,41 @@ def _headers() -> Dict[str, str]:
 def is_configured() -> bool:
     """Check if Harvest credentials are set."""
     return bool(os.getenv("HARVEST_ACCESS_TOKEN")) and bool(os.getenv("HARVEST_ACCOUNT_ID"))
+
+
+def get_users() -> List[Dict]:
+    """Fetch all active users from Harvest. Cached."""
+    global _user_cache, _user_cache_time
+
+    if _user_cache and (time.time() - _user_cache_time) < CACHE_TTL:
+        return _user_cache
+
+    try:
+        resp = httpx.get(
+            f"{HARVEST_BASE}/users",
+            headers=_headers(),
+            params={"is_active": "true"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            _user_cache = resp.json().get("users", [])
+            _user_cache_time = time.time()
+            return _user_cache
+        return _user_cache or []
+    except Exception as e:
+        print(f"Harvest get_users error: {e}")
+        return _user_cache or []
+
+
+def resolve_user_id(email: str) -> Optional[int]:
+    """Map a Google login email to a Harvest user ID."""
+    if not email:
+        return None
+    users = get_users()
+    for u in users:
+        if u.get("email", "").lower() == email.lower():
+            return u["id"]
+    return None
 
 
 def get_projects_with_tasks() -> List[Dict]:
@@ -120,6 +157,7 @@ def create_time_entry(
     spent_date: str,
     hours: float,
     notes: str = "",
+    user_id: int = None,
 ) -> Optional[Dict]:
     """Create a time entry in Harvest.
     Returns the Harvest entry dict with id, or None on failure.
@@ -128,16 +166,19 @@ def create_time_entry(
         return None
 
     try:
+        payload = {
+            "project_id": project_id,
+            "task_id": task_id,
+            "spent_date": spent_date,
+            "hours": hours,
+            "notes": notes,
+        }
+        if user_id:
+            payload["user_id"] = user_id
         resp = httpx.post(
             f"{HARVEST_BASE}/time_entries",
             headers=_headers(),
-            json={
-                "project_id": project_id,
-                "task_id": task_id,
-                "spent_date": spent_date,
-                "hours": hours,
-                "notes": notes,
-            },
+            json=payload,
             timeout=10,
         )
         if resp.status_code in (200, 201):
@@ -196,7 +237,50 @@ def get_time_entries(spent_date: str = None, user_id: int = None) -> List[Dict]:
         return []
 
 
-def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, notes: str = "") -> Optional[Dict]:
+def reassign_time_entry(harvest_id: int, new_user_id: int) -> Optional[Dict]:
+    """Reassign a time entry to a different user.
+    Harvest doesn't allow PATCH on user_id, so we delete + recreate.
+    Returns the new entry dict or None on failure.
+    """
+    if not is_configured():
+        return None
+
+    try:
+        # Get the existing entry
+        resp = httpx.get(
+            f"{HARVEST_BASE}/time_entries/{harvest_id}",
+            headers=_headers(),
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            print(f"Harvest: could not fetch entry {harvest_id}")
+            return None
+
+        old = resp.json()
+
+        # Delete the old entry
+        if not delete_time_entry(harvest_id):
+            print(f"Harvest: could not delete entry {harvest_id}")
+            return None
+
+        # Recreate with correct user
+        new_entry = create_time_entry(
+            project_id=old["project"]["id"],
+            task_id=old["task"]["id"],
+            spent_date=old["spent_date"],
+            hours=old["hours"],
+            notes=old.get("notes", ""),
+            user_id=new_user_id,
+        )
+        if new_entry:
+            print(f"Harvest: reassigned entry {harvest_id} -> {new_entry['id']} for user {new_user_id}")
+        return new_entry
+    except Exception as e:
+        print(f"Harvest reassign error: {e}")
+        return None
+
+
+def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, notes: str = "", user_id: int = None) -> Optional[Dict]:
     """High-level: resolve names to IDs and create a Harvest time entry.
     This is the main function called by the app.
     """
@@ -214,4 +298,5 @@ def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, 
         spent_date=spent_date,
         hours=hours,
         notes=notes,
+        user_id=user_id,
     )

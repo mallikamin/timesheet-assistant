@@ -132,7 +132,7 @@ class ChatResponse(BaseModel):
     entries_created: List[Dict] = []
 
 
-def save_entry_everywhere(user: str, entry_data: Dict) -> Dict:
+def save_entry_everywhere(user: str, entry_data: Dict, user_email: str = "") -> Dict:
     """Save an entry to Supabase, Google Sheets, and Harvest."""
     entry = harvest_mock.create_draft_entry(
         user=user,
@@ -147,6 +147,8 @@ def save_entry_everywhere(user: str, entry_data: Dict) -> Dict:
     )
     # Sync to Google Sheet
     sheets_sync.sync_entry_to_sheet(entry)
+    # Resolve Harvest user ID from email
+    harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
     # Push to Harvest
     harvest_entry = harvest_api.push_entry(
         client_name=entry_data.get("client", ""),
@@ -154,6 +156,7 @@ def save_entry_everywhere(user: str, entry_data: Dict) -> Dict:
         spent_date=entry_data.get("date", date.today().isoformat()),
         hours=float(entry_data.get("hours", 0)),
         notes=entry_data.get("notes", ""),
+        user_id=harvest_user_id,
     )
     if harvest_entry:
         entry["harvest_id"] = harvest_entry["id"]
@@ -273,7 +276,7 @@ async def chat(req: ChatRequest, request: Request):
     # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = save_entry_everywhere(req.user, entry_data)
+        entry = save_entry_everywhere(req.user, entry_data, user_email=user.get("email", ""))
         created_entries.append(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
@@ -397,7 +400,7 @@ async def suggest_from_calendar(request: Request):
     # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = save_entry_everywhere(user["name"], entry_data)
+        entry = save_entry_everywhere(user["name"], entry_data, user_email=user.get("email", ""))
         created_entries.append(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
@@ -465,7 +468,7 @@ async def suggest_from_drive(request: Request):
     # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = save_entry_everywhere(user["name"], entry_data)
+        entry = save_entry_everywhere(user["name"], entry_data, user_email=user.get("email", ""))
         created_entries.append(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
