@@ -7,6 +7,7 @@ Google SSO authentication.
 import json
 import os
 from datetime import date
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import anthropic
@@ -26,14 +27,15 @@ import harvest_mock
 import sheets_sync
 from project_mapping import get_all_projects_for_prompt
 
-load_dotenv()
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 app = FastAPI(title="Timesheet Assistant POC")
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
 )
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # Google OAuth
 oauth = OAuth()
@@ -190,7 +192,7 @@ async def login_page(request: Request):
     user = get_current_user(request)
     if user:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @app.get("/auth/google")
@@ -236,12 +238,15 @@ async def home(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "user": user,
-        "users": PILOT_USERS,
-        "today": date.today().strftime("%A, %d/%m/%Y"),
-    })
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "user": user,
+            "users": PILOT_USERS,
+            "today": date.today().strftime("%A, %d/%m/%Y"),
+        },
+    )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
