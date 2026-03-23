@@ -192,7 +192,7 @@ async def login_page(request: Request):
     user = get_current_user(request)
     if user:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse(request, "login.html")
+    return templates.TemplateResponse(request=request, name="login.html")
 
 
 @app.get("/auth/google")
@@ -239,9 +239,9 @@ async def home(request: Request):
     if not user:
         return RedirectResponse(url="/login")
     return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
+        request=request,
+        name="index.html",
+        context={
             "user": user,
             "users": PILOT_USERS,
             "today": date.today().strftime("%A, %d/%m/%Y"),
