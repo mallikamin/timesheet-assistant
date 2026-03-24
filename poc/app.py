@@ -22,6 +22,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import calendar_sync
 import drive_sync
+import gmail_sync
 import harvest_api
 import harvest_mock
 import sheets_sync
@@ -45,7 +46,7 @@ oauth.register(
     client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={
-        "scope": "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.metadata.readonly",
+        "scope": "openid email profile https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/gmail.readonly",
     },
 )
 
@@ -135,7 +136,7 @@ class ChatResponse(BaseModel):
 
 
 def save_entry_everywhere(user: str, entry_data: Dict, user_email: str = "") -> Dict:
-    """Save an entry to Supabase, Google Sheets, and Harvest."""
+    """Save an entry as Draft to Supabase and Google Sheets. Harvest push happens on approval."""
     entry = harvest_mock.create_draft_entry(
         user=user,
         client=entry_data.get("client", "Unknown"),
@@ -147,22 +148,8 @@ def save_entry_everywhere(user: str, entry_data: Dict, user_email: str = "") -> 
         entry_date=entry_data.get("date", date.today().isoformat()),
         status=entry_data.get("status", "Draft"),
     )
-    # Sync to Google Sheet
+    # Sync to Google Sheet (draft only — no Harvest push until approved)
     sheets_sync.sync_entry_to_sheet(entry)
-    # Resolve Harvest user ID from email
-    harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
-    # Push to Harvest
-    harvest_entry = harvest_api.push_entry(
-        client_name=entry_data.get("client", ""),
-        task_name=entry_data.get("project_name", entry_data.get("task", "")),
-        spent_date=entry_data.get("date", date.today().isoformat()),
-        hours=float(entry_data.get("hours", 0)),
-        notes=entry_data.get("notes", ""),
-        user_id=harvest_user_id,
-    )
-    if harvest_entry:
-        entry["harvest_id"] = harvest_entry["id"]
-        harvest_mock.update_entry(entry["id"], harvest_id=harvest_entry["id"])
     return entry
 
 
@@ -287,6 +274,42 @@ async def chat(req: ChatRequest, request: Request):
     return ChatResponse(response=display_text, entries_created=created_entries)
 
 
+@app.post("/api/entries/approve-all")
+async def approve_all_entries(request: Request):
+    """Approve all draft entries for the current user."""
+    user = get_current_user(request)
+    if not user:
+        return {"success": False, "error": "Not authenticated"}
+
+    body = await request.json()
+    user_name = body.get("user", user.get("name", ""))
+    user_email = user.get("email", "")
+
+    entries = harvest_mock.get_entries(user=user_name)
+    drafts = [e for e in entries if e.get("status") in ("Draft", "Needs Review")]
+
+    results = []
+    for entry in drafts:
+        harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
+        harvest_entry = harvest_api.push_entry(
+            client_name=entry.get("client", ""),
+            task_name=entry.get("project_name", entry.get("task", "")),
+            spent_date=entry.get("date", date.today().isoformat()),
+            hours=float(entry.get("hours", 0)),
+            notes=entry.get("notes", ""),
+            user_id=harvest_user_id,
+        )
+
+        if harvest_entry:
+            harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
+            sheets_sync.update_entry_status_in_sheet(entry["id"], "Approved")
+            results.append({"id": entry["id"], "approved": True})
+        else:
+            results.append({"id": entry["id"], "approved": False})
+
+    return {"success": True, "results": results}
+
+
 @app.get("/api/entries/{user}")
 async def get_entries(user: str, entry_date: str = None):
     entries = harvest_mock.get_entries(user=user, entry_date=entry_date)
@@ -315,7 +338,53 @@ async def delete_entry(entry_id: str):
 async def update_entry(entry_id: str, request: Request):
     body = await request.json()
     entry = harvest_mock.update_entry(entry_id, **body)
+    if entry and "status" in body:
+        sheets_sync.update_entry_status_in_sheet(entry_id, body["status"])
     return {"entry": entry, "success": entry is not None}
+
+
+@app.post("/api/entries/{entry_id}/approve")
+async def approve_entry(entry_id: str, request: Request):
+    """Approve a draft entry: push to Harvest, update status."""
+    user = get_current_user(request)
+    if not user:
+        return {"success": False, "error": "Not authenticated"}
+
+    # Find the entry
+    entries = harvest_mock.get_entries()
+    entry = None
+    for e in entries:
+        if e.get("id") == entry_id:
+            entry = e
+            break
+
+    if not entry:
+        return {"success": False, "error": "Entry not found"}
+
+    if entry.get("status") == "Approved":
+        return {"success": False, "error": "Already approved"}
+
+    # Push to Harvest
+    user_email = user.get("email", "")
+    harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
+    harvest_entry = harvest_api.push_entry(
+        client_name=entry.get("client", ""),
+        task_name=entry.get("project_name", entry.get("task", "")),
+        spent_date=entry.get("date", date.today().isoformat()),
+        hours=float(entry.get("hours", 0)),
+        notes=entry.get("notes", ""),
+        user_id=harvest_user_id,
+    )
+
+    if not harvest_entry:
+        return {"success": False, "error": "Failed to push to Harvest"}
+
+    # Update Supabase
+    harvest_mock.update_entry(entry_id, status="Approved", harvest_id=harvest_entry["id"])
+    # Update Google Sheet
+    sheets_sync.update_entry_status_in_sheet(entry_id, "Approved")
+
+    return {"success": True, "harvest_id": harvest_entry["id"]}
 
 
 @app.get("/api/calendar/events")
@@ -471,6 +540,73 @@ async def suggest_from_drive(request: Request):
     harvest_mock.save_chat_message(user["name"], "assistant", display_text)
 
     # Save entries to Supabase + Sheets + Harvest
+    created_entries = []
+    for entry_data in entries_data:
+        entry = save_entry_everywhere(user["name"], entry_data, user_email=user.get("email", ""))
+        created_entries.append(entry)
+
+    return ChatResponse(response=display_text, entries_created=created_entries)
+
+
+@app.post("/api/gmail/suggest")
+async def suggest_from_gmail(request: Request):
+    """Fetch email activity and ask Claude to suggest time entries."""
+    user = get_current_user(request)
+    if not user:
+        return ChatResponse(response="Please log in first.", entries_created=[])
+
+    body = await request.json()
+    target_date = body.get("date")
+    history = body.get("history", [])
+
+    google_token = request.session.get("google_token")
+    if not google_token or not google_token.get("access_token"):
+        return ChatResponse(
+            response="I don't have access to your Gmail. Please sign out and sign back in to grant permission.",
+            entries_created=[],
+        )
+
+    valid_token = calendar_sync.ensure_valid_token(google_token)
+    if not valid_token:
+        return ChatResponse(
+            response="Your Google access has expired. Please sign out and sign back in.",
+            entries_created=[],
+        )
+
+    request.session["google_token"] = valid_token
+    emails = gmail_sync.get_recent_emails(valid_token["access_token"], target_date)
+
+    if not emails:
+        return ChatResponse(
+            response="No email activity found for today. Tell me what you worked on and I'll log it manually.",
+            entries_created=[],
+        )
+
+    emails_text = gmail_sync.format_emails_for_prompt(emails, target_date)
+    gmail_prompt = (
+        f"I just pulled my email activity. Here are the emails from today:\n\n{emails_text}\n\n"
+        "Can you suggest time entries based on these? Map them to the Harvest projects where possible. "
+        "Group related emails together and estimate time spent. Ask me about anything you're unsure of."
+    )
+
+    messages = []
+    for msg in history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": gmail_prompt})
+
+    response = client.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    )
+
+    ai_text = response.content[0].text
+    display_text, entries_data = parse_entries_from_response(ai_text)
+
+    harvest_mock.save_chat_message(user["name"], "user", gmail_prompt)
+    harvest_mock.save_chat_message(user["name"], "assistant", display_text)
+
     created_entries = []
     for entry_data in entries_data:
         entry = save_entry_everywhere(user["name"], entry_data, user_email=user.get("email", ""))

@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phase 2 Plan — Browser Extension &amp; Advanced Features | Sitara Infotech</title>
+<style>
+  :root {
+    --navy: #1e3a5f;
+    --navy-light: #2c5282;
+    --gray-50: #f7fafc;
+    --gray-100: #edf2f7;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e0;
+    --gray-600: #718096;
+    --gray-700: #4a5568;
+    --gray-800: #2d3748;
+    --gray-900: #1a202c;
+    --green: #276749;
+    --green-light: #f0fff4;
+    --blue-light: #ebf8ff;
+    --orange: #c05621;
+    --orange-light: #fffaf0;
+  }
+
+  @page { margin: 2cm 2.5cm; size: A4; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: var(--gray-800);
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 2cm 2.5cm;
+    background: #fff;
+  }
+
+  .cover {
+    text-align: center;
+    padding: 60px 0 40px;
+    border-bottom: 3px solid var(--navy);
+    margin-bottom: 40px;
+    page-break-after: always;
+  }
+  .cover .company {
+    font-size: 13pt;
+    font-weight: 600;
+    color: var(--navy);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 50px;
+  }
+  .cover .phase-badge {
+    display: inline-block;
+    background: var(--navy);
+    color: #fff;
+    padding: 6px 20px;
+    border-radius: 4px;
+    font-size: 11pt;
+    font-weight: 600;
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+  }
+  .cover h1 {
+    font-size: 26pt;
+    font-weight: 300;
+    color: var(--navy);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+  .cover .subtitle {
+    font-size: 14pt;
+    color: var(--gray-700);
+    font-weight: 400;
+    margin-bottom: 50px;
+  }
+  .cover .meta {
+    font-size: 10.5pt;
+    color: var(--gray-600);
+    line-height: 2;
+  }
+  .cover .meta strong {
+    color: var(--gray-800);
+    display: inline-block;
+    width: 120px;
+    text-align: right;
+    margin-right: 12px;
+  }
+
+  h2 {
+    font-size: 15pt;
+    color: var(--navy);
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 6px;
+    margin: 36px 0 16px;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 12pt;
+    color: var(--navy-light);
+    margin: 24px 0 10px;
+    font-weight: 600;
+  }
+  h4 {
+    font-size: 10.5pt;
+    color: var(--gray-800);
+    margin: 16px 0 8px;
+    font-weight: 600;
+  }
+  p { margin-bottom: 10px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 10pt;
+  }
+  th {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  tr:nth-child(even) td { background: var(--gray-50); }
+  .highlight-row td {
+    background: var(--green-light) !important;
+    font-weight: 600;
+  }
+  .amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ul, ol { margin: 8px 0 14px 24px; }
+  li { margin-bottom: 5px; }
+
+  .callout {
+    background: var(--gray-50);
+    border-left: 4px solid var(--navy);
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 10pt;
+  }
+  .callout-green {
+    background: var(--green-light);
+    border-left-color: var(--green);
+  }
+  .callout-orange {
+    background: var(--orange-light);
+    border-left-color: var(--orange);
+  }
+
+  .page-break { page-break-before: always; }
+
+  .doc-footer {
+    margin-top: 50px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-300);
+    font-size: 8.5pt;
+    color: var(--gray-600);
+    text-align: center;
+  }
+
+  .feature-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .feature-card h4 {
+    margin-top: 0;
+    color: var(--navy);
+  }
+
+  @media print {
+    body { padding: 0; }
+    .page-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="company">Sitara Infotech</div>
+  <div class="phase-badge">PHASE 2</div>
+  <h1>Browser Extension &amp; Advanced Features</h1>
+  <div class="subtitle">Universal Time Tracking Beyond Google Workspace</div>
+  <div class="meta">
+    <strong>Project:</strong> AI-Powered Timesheet Assistant<br>
+    <strong>Client:</strong> Thrive PR + Communications<br>
+    <strong>Date:</strong> 24 March 2026<br>
+    <strong>Prerequisite:</strong> Phase 1 Production Deployment<br>
+    <strong>Version:</strong> 1.0
+  </div>
+</div>
+
+<!-- ============ 1. OVERVIEW ============ -->
+<h2>1. Overview</h2>
+
+<h3>Why a Browser Extension?</h3>
+<p>
+  Phase 1 captures time from Google Workspace (Calendar, Gmail, Drive) and direct user input.
+  However, Thrive's team works across dozens of web-based tools &mdash; Jira, Figma, Slack,
+  Asana, Canva, social media platforms, and more. A browser extension provides
+  <strong>universal coverage</strong> by tracking active time in any web application,
+  without requiring individual API integrations for each tool.
+</p>
+
+<div class="callout callout-green">
+  <strong>One extension replaces dozens of integrations.</strong> Instead of building separate
+  connectors for Jira, Figma, Slack, Asana, and every other tool, the extension tracks them
+  all through a single mechanism: active tab monitoring with intelligent project mapping.
+</div>
+
+<h3>How It Works</h3>
+<ol>
+  <li><strong>Passive tracking:</strong> The extension monitors which browser tab is active and for how long</li>
+  <li><strong>Smart clustering:</strong> Short tab visits are grouped into meaningful work sessions (e.g., 45 minutes across 12 Jira tabs = one "Jira project work" session)</li>
+  <li><strong>AI project mapping:</strong> The assistant maps URLs and page titles to Harvest projects using configurable rules + AI inference</li>
+  <li><strong>Daily summary:</strong> At end of day, the assistant presents tracked sessions as draft time entries for review</li>
+  <li><strong>User approval:</strong> Entries follow the same draft-and-approve workflow from Phase 1 &mdash; nothing reaches Harvest without user sign-off</li>
+</ol>
+
+<!-- ============ 2. SCOPE ============ -->
+<div class="page-break"></div>
+<h2>2. Scope of Work</h2>
+
+<h3>2.1 &nbsp;Chrome Browser Extension</h3>
+
+<div class="feature-card">
+  <h4>Active Tab Monitoring</h4>
+  <ul>
+    <li>Track active tab URL, page title, and duration</li>
+    <li>Idle detection &mdash; automatically pause tracking when user is away (configurable: 2, 5, or 10 minutes)</li>
+    <li>Domain whitelist/blacklist &mdash; exclude personal sites (social media, banking, etc.)</li>
+    <li>Privacy-first design &mdash; data stays between user and platform, no keystroke logging, no screenshots</li>
+  </ul>
+</div>
+
+<div class="feature-card">
+  <h4>Extension Popup &amp; Controls</h4>
+  <ul>
+    <li>Quick glance: today's tracked time by project</li>
+    <li>One-click manual time entry (for offline work or meetings)</li>
+    <li>Pause / resume tracking toggle</li>
+    <li>Current session indicator &mdash; shows active project mapping in real time</li>
+    <li>"This is not work" button &mdash; quickly exclude current activity</li>
+  </ul>
+</div>
+
+<div class="feature-card">
+  <h4>Project Mapping Engine</h4>
+  <ul>
+    <li>Rule-based mapping: URL patterns &rarr; Harvest projects (e.g., <code>jira.com/*mediaworks*</code> &rarr; "MediaWorks")</li>
+    <li>AI-assisted mapping: for unmapped URLs, the assistant infers the most likely project from page title and context</li>
+    <li>Learning: user corrections improve future mapping accuracy</li>
+    <li>Admin-configurable default rules for the organisation</li>
+  </ul>
+</div>
+
+<h3>2.2 &nbsp;Backend: Activity Ingestion</h3>
+
+<div class="feature-card">
+  <h4>Data Pipeline</h4>
+  <ul>
+    <li>Secure API endpoint for extension data (encrypted, authenticated per user)</li>
+    <li>Activity aggregation &mdash; raw tab events compressed into sessions</li>
+    <li>Session clustering algorithm &mdash; groups related tab activity into logical work blocks</li>
+    <li>Storage in Supabase with per-user data isolation</li>
+    <li>Retention policy: raw activity data retained for 90 days, aggregated data indefinitely</li>
+  </ul>
+</div>
+
+<h3>2.3 &nbsp;Smart Daily Summary</h3>
+
+<div class="feature-card">
+  <h4>End-of-Day AI Summary</h4>
+  <ul>
+    <li>AI analyses the day's tracked sessions alongside Calendar, Gmail, and Drive data</li>
+    <li>Generates a unified draft timesheet combining all sources</li>
+    <li>Highlights gaps: "You had 2 hours with no tracked activity between 2pm&ndash;4pm &mdash; what were you working on?"</li>
+    <li>Suggests entries with confidence levels (high/medium/low)</li>
+    <li>Feeds into the Phase 1 draft-and-approve workflow</li>
+  </ul>
+</div>
+
+<h3>2.4 &nbsp;Advanced Analytics &amp; Reporting</h3>
+
+<div class="feature-card">
+  <h4>Individual Reports</h4>
+  <ul>
+    <li>Time by project &mdash; weekly/monthly breakdown</li>
+    <li>Time by tool &mdash; which applications consume the most time</li>
+    <li>Productivity patterns &mdash; peak hours, focus time vs. fragmented time</li>
+    <li>Timesheet completion rate &mdash; percentage of working hours logged</li>
+  </ul>
+</div>
+
+<div class="feature-card">
+  <h4>Manager / Admin Reports</h4>
+  <ul>
+    <li>Team utilisation dashboard &mdash; at-a-glance view of who's logging and who isn't</li>
+    <li>Project time allocation &mdash; actual hours vs. budgeted across the team</li>
+    <li>Tool usage across the organisation &mdash; which platforms drive the most work</li>
+    <li>Under-logging alerts &mdash; flag team members consistently below threshold</li>
+    <li>Export to CSV / Google Sheets for further analysis</li>
+  </ul>
+</div>
+
+<h3>2.5 &nbsp;Notifications &amp; Reminders</h3>
+<ul>
+  <li>End-of-day reminder: "You have 3 hours unlogged today &mdash; review your draft?"</li>
+  <li>Weekly summary email: timesheet overview + missing days</li>
+  <li>Manager alerts: team members who haven't submitted timesheets by deadline</li>
+  <li>Configurable notification preferences per user</li>
+</ul>
+
+<!-- ============ 3. TECHNICAL ============ -->
+<div class="page-break"></div>
+<h2>3. Technical Architecture</h2>
+
+<h3>Extension</h3>
+<table>
+  <tr><td style="width:160px; font-weight:600;">Platform</td><td>Chrome (Manifest V3) &mdash; compatible with Edge, Brave, Arc</td></tr>
+  <tr><td style="font-weight:600;">Permissions</td><td>activeTab, tabs, idle, storage, alarms (no broad host permissions)</td></tr>
+  <tr><td style="font-weight:600;">Data sync</td><td>Batched upload every 5 minutes (not real-time, reduces bandwidth)</td></tr>
+  <tr><td style="font-weight:600;">Offline support</td><td>Local storage queue, syncs when connection restores</td></tr>
+  <tr><td style="font-weight:600;">Size</td><td>Lightweight (&lt;500KB), no impact on browser performance</td></tr>
+</table>
+
+<h3>Backend Additions</h3>
+<table>
+  <tr><td style="width:160px; font-weight:600;">API</td><td>New REST endpoints for activity ingestion, session queries, mapping rules</td></tr>
+  <tr><td style="font-weight:600;">Processing</td><td>Session clustering runs server-side on batched data</td></tr>
+  <tr><td style="font-weight:600;">Storage</td><td>Supabase &mdash; new tables for raw_activity, sessions, mapping_rules</td></tr>
+  <tr><td style="font-weight:600;">AI</td><td>Project inference uses the same AI model as Phase 1 (swappable)</td></tr>
+</table>
+
+<h3>Privacy &amp; Security</h3>
+<ul>
+  <li>The extension tracks <strong>URLs and page titles only</strong> &mdash; no page content, no keystrokes, no screenshots</li>
+  <li>Users can exclude specific domains (personal banking, social media, health portals)</li>
+  <li>All data encrypted in transit (TLS) and at rest</li>
+  <li>Per-user data isolation &mdash; no cross-user data access</li>
+  <li>Admin cannot see individual browsing history &mdash; only aggregated project time</li>
+  <li>Compliant with Australian Privacy Act and NZ Privacy Act 2020</li>
+</ul>
+
+<div class="callout callout-orange">
+  <strong>Privacy by design:</strong> Managers see "Sarah logged 3 hours on MediaWorks via Jira" &mdash;
+  they never see which specific URLs or pages Sarah visited. Individual browsing data is visible
+  only to the user themselves.
+</div>
+
+<!-- ============ 4. DELIVERABLES ============ -->
+<h2>4. Deliverables Summary</h2>
+<table>
+  <tr>
+    <th>#</th>
+    <th>Deliverable</th>
+    <th>Description</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>Chrome Extension</td>
+    <td>Published to Chrome Web Store (private distribution for Thrive)</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Activity Ingestion API</td>
+    <td>Secure endpoints for extension data sync</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Session Clustering Engine</td>
+    <td>Algorithm that groups tab activity into work sessions</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Project Mapping Admin</td>
+    <td>UI for configuring URL &rarr; project mapping rules</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Daily AI Summary</td>
+    <td>Unified draft timesheet from all tracking sources</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>Analytics Dashboard</td>
+    <td>Individual + manager reporting views</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>Notification System</td>
+    <td>Reminders, alerts, and weekly summaries</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td>Installation Guide</td>
+    <td>Step-by-step extension deployment for Thrive IT</td>
+  </tr>
+</table>
+
+<!-- ============ 5. TIMELINE ============ -->
+<div class="page-break"></div>
+<h2>5. Timeline</h2>
+
+<table>
+  <tr>
+    <th>Sprint</th>
+    <th>Week</th>
+    <th>Focus</th>
+    <th>Deliverables</th>
+  </tr>
+  <tr>
+    <td>Sprint 1</td>
+    <td>1&ndash;2</td>
+    <td>Extension core + ingestion API</td>
+    <td>Working extension with tab tracking, backend storage</td>
+  </tr>
+  <tr>
+    <td>Sprint 2</td>
+    <td>3&ndash;4</td>
+    <td>Session clustering + project mapping</td>
+    <td>Smart grouping, rule-based + AI mapping, admin config</td>
+  </tr>
+  <tr>
+    <td>Sprint 3</td>
+    <td>5&ndash;6</td>
+    <td>Daily summary + analytics</td>
+    <td>Unified draft workflow, individual + manager reports</td>
+  </tr>
+  <tr>
+    <td>Sprint 4</td>
+    <td>7</td>
+    <td>Notifications + polish</td>
+    <td>Reminders, alerts, UX refinement</td>
+  </tr>
+  <tr>
+    <td>Testing</td>
+    <td>8</td>
+    <td>QA + beta testing with Thrive</td>
+    <td>Bug fixes, performance tuning, user feedback</td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>Total duration:</strong> 8 weeks from Phase 1 completion.
+  Beta testing with 3&ndash;5 Thrive users in the final week before full rollout.
+</div>
+
+<!-- ============ 6. PRICING ============ -->
+<h2>6. Pricing</h2>
+
+<h3>Implementation Fee</h3>
+<table>
+  <tr>
+    <th>Item</th>
+    <th class="amount">Investment (USD)</th>
+  </tr>
+  <tr>
+    <td>Phase 2: Browser Extension &amp; Advanced Features</td>
+    <td class="amount">$3,500</td>
+  </tr>
+</table>
+
+<h3>Monthly Impact</h3>
+<p>
+  Phase 2 does <strong>not</strong> increase the per-user monthly fee. The browser extension
+  and advanced analytics are included in the existing monthly service rate established in
+  Phase 1. This is because:
+</p>
+<ul>
+  <li>Extension data processing uses minimal additional compute</li>
+  <li>Storage costs for activity data are marginal at scale</li>
+  <li>The extension improves timesheet accuracy, increasing the platform's value without increasing cost</li>
+</ul>
+
+<div class="callout callout-green">
+  <strong>No monthly price increase.</strong> Phase 2 features are included in the existing
+  $5.50/user/month (at 50+ users) service fee from Phase 1.
+</div>
+
+<h3>Payment Terms</h3>
+<ul>
+  <li>50% due on Phase 2 commencement ($1,750)</li>
+  <li>50% due on delivery and acceptance ($1,750)</li>
+  <li>Phase 2 may be started any time after Phase 1 is stable and approved</li>
+</ul>
+
+<!-- ============ 7. PREREQUISITES ============ -->
+<h2>7. Prerequisites</h2>
+<p>Phase 2 requires the following to be in place:</p>
+<ul>
+  <li>Phase 1 deployed and stable with active users</li>
+  <li>Chrome Web Store developer account (Sitara Infotech will set up; $5 one-time fee)</li>
+  <li>Thrive's Harvest project list finalised (for mapping rules)</li>
+  <li>IT approval for Chrome extension deployment to Thrive devices</li>
+  <li>3&ndash;5 beta testers identified for the final testing sprint</li>
+</ul>
+
+<!-- ============ 8. FUTURE ============ -->
+<h2>8. Future Considerations</h2>
+<p>Beyond Phase 2, potential enhancements include:</p>
+
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>Description</th>
+    <th>Effort</th>
+  </tr>
+  <tr>
+    <td>Firefox / Safari extensions</td>
+    <td>Extend browser support beyond Chromium-based browsers</td>
+    <td>Low</td>
+  </tr>
+  <tr>
+    <td>Mobile companion app</td>
+    <td>Time logging and approvals on iOS/Android</td>
+    <td>Medium</td>
+  </tr>
+  <tr>
+    <td>Google Workspace Add-on</td>
+    <td>Embed assistant as a sidebar inside Gmail, Docs, Sheets</td>
+    <td>Medium</td>
+  </tr>
+  <tr>
+    <td>Google Meet transcript integration</td>
+    <td>Auto-log meeting time from Meet transcription data</td>
+    <td>Low</td>
+  </tr>
+  <tr>
+    <td>Slack integration</td>
+    <td>Log time via Slack commands, track Slack activity</td>
+    <td>Low</td>
+  </tr>
+  <tr>
+    <td>AI model optimisation</td>
+    <td>Evaluate Google Gemini for reduced AI processing costs</td>
+    <td>Low</td>
+  </tr>
+</table>
+
+<p>
+  These features can be scoped and quoted individually as the platform matures and
+  Thrive's requirements evolve.
+</p>
+
+<div class="doc-footer">
+  Sitara Infotech &nbsp;&bull;&nbsp; Phase 2 Plan v1.0 &nbsp;&bull;&nbsp; 24 March 2026 &nbsp;&bull;&nbsp; Confidential
+</div>
+
+</body>
+</html>

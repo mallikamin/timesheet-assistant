@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Statement of Work — AI-Powered Timesheet Assistant | Sitara Infotech</title>
+<style>
+  :root {
+    --navy: #1e3a5f;
+    --navy-light: #2c5282;
+    --gray-50: #f7fafc;
+    --gray-100: #edf2f7;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e0;
+    --gray-600: #718096;
+    --gray-700: #4a5568;
+    --gray-800: #2d3748;
+    --gray-900: #1a202c;
+    --green: #276749;
+    --green-light: #f0fff4;
+    --amber: #92400e;
+    --amber-light: #fffbeb;
+  }
+
+  @page {
+    margin: 2cm 2.5cm;
+    size: A4;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: var(--gray-800);
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 2cm 2.5cm;
+    background: #fff;
+  }
+
+  /* ---- Cover / Header ---- */
+  .cover {
+    text-align: center;
+    padding: 60px 0 40px;
+    border-bottom: 3px solid var(--navy);
+    margin-bottom: 40px;
+    page-break-after: always;
+  }
+  .cover .company {
+    font-size: 13pt;
+    font-weight: 600;
+    color: var(--navy);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 50px;
+  }
+  .cover h1 {
+    font-size: 28pt;
+    font-weight: 300;
+    color: var(--navy);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+  .cover .subtitle {
+    font-size: 16pt;
+    color: var(--gray-700);
+    font-weight: 400;
+    margin-bottom: 50px;
+  }
+  .cover .meta {
+    font-size: 10.5pt;
+    color: var(--gray-600);
+    line-height: 2;
+  }
+  .cover .meta strong {
+    color: var(--gray-800);
+    display: inline-block;
+    width: 120px;
+    text-align: right;
+    margin-right: 12px;
+  }
+
+  /* ---- Section headings ---- */
+  h2 {
+    font-size: 15pt;
+    color: var(--navy);
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 6px;
+    margin: 36px 0 16px;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 12pt;
+    color: var(--navy-light);
+    margin: 24px 0 10px;
+    font-weight: 600;
+  }
+  h4 {
+    font-size: 10.5pt;
+    color: var(--gray-800);
+    margin: 16px 0 8px;
+    font-weight: 600;
+  }
+
+  p { margin-bottom: 10px; }
+
+  /* ---- Tables ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 20px;
+    font-size: 10pt;
+  }
+  th {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  tr:nth-child(even) td {
+    background: var(--gray-50);
+  }
+  .highlight-row td {
+    background: var(--green-light) !important;
+    font-weight: 600;
+  }
+  .amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Lists ---- */
+  ul, ol {
+    margin: 8px 0 14px 24px;
+  }
+  li {
+    margin-bottom: 5px;
+  }
+
+  /* ---- Callout box ---- */
+  .callout {
+    background: var(--gray-50);
+    border-left: 4px solid var(--navy);
+    padding: 14px 18px;
+    margin: 16px 0;
+    font-size: 10pt;
+  }
+  .callout-green {
+    background: var(--green-light);
+    border-left-color: var(--green);
+  }
+  .callout-amber {
+    background: var(--amber-light);
+    border-left-color: var(--amber);
+  }
+
+  /* ---- Signature block ---- */
+  .signatures {
+    display: flex;
+    gap: 60px;
+    margin-top: 40px;
+  }
+  .sig-block {
+    flex: 1;
+  }
+  .sig-line {
+    border-bottom: 1px solid var(--gray-800);
+    margin: 30px 0 6px;
+    width: 100%;
+  }
+  .sig-label {
+    font-size: 9pt;
+    color: var(--gray-600);
+  }
+
+  /* ---- Workflow steps ---- */
+  .workflow {
+    counter-reset: step-counter;
+    list-style: none;
+    margin-left: 0;
+    padding-left: 0;
+  }
+  .workflow li {
+    counter-increment: step-counter;
+    padding: 8px 0 8px 44px;
+    position: relative;
+    border-left: 2px solid var(--gray-200);
+    margin-bottom: 0;
+  }
+  .workflow li:last-child {
+    border-left-color: transparent;
+  }
+  .workflow li::before {
+    content: counter(step-counter);
+    position: absolute;
+    left: -14px;
+    top: 6px;
+    width: 28px;
+    height: 28px;
+    background: var(--navy);
+    color: #fff;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+
+  /* ---- Page break helpers ---- */
+  .page-break { page-break-before: always; }
+
+  /* ---- TOC ---- */
+  .toc {
+    margin: 20px 0 40px;
+  }
+  .toc ol {
+    list-style: none;
+    counter-reset: toc-counter;
+    margin-left: 0;
+    padding-left: 0;
+  }
+  .toc > ol > li {
+    counter-increment: toc-counter;
+    margin-bottom: 8px;
+    font-size: 11pt;
+  }
+  .toc > ol > li::before {
+    content: counter(toc-counter) ". ";
+    font-weight: 600;
+    color: var(--navy);
+  }
+
+  /* ---- Footer ---- */
+  .doc-footer {
+    margin-top: 50px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-300);
+    font-size: 8.5pt;
+    color: var(--gray-600);
+    text-align: center;
+  }
+
+  /* ---- Print ---- */
+  @media print {
+    body { padding: 0; }
+    .page-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="company">Sitara Infotech</div>
+  <h1>Statement of Work</h1>
+  <div class="subtitle">AI-Powered Timesheet Assistant</div>
+  <div class="meta">
+    <strong>Prepared for:</strong> Thrive PR + Communications<br>
+    <strong>Prepared by:</strong> Sitara Infotech<br>
+    <strong>Date:</strong> 24 March 2026<br>
+    <strong>Version:</strong> 2.0<br>
+    <strong>Valid until:</strong> 23 May 2026
+  </div>
+</div>
+
+<!-- ============ TOC ============ -->
+<div class="toc">
+  <h2 style="border: none; margin-top: 0;">Contents</h2>
+  <ol>
+    <li>Executive Summary</li>
+    <li>Current Position</li>
+    <li>Target Workflow</li>
+    <li>Scope of Work</li>
+    <li>Pricing Schedule</li>
+    <li>Timeline</li>
+    <li>Client Responsibilities</li>
+    <li>Items for Confirmation</li>
+    <li>Support &amp; Maintenance</li>
+    <li>Terms &amp; Conditions</li>
+    <li>Acceptance</li>
+  </ol>
+</div>
+
+<!-- ============ 1. EXECUTIVE SUMMARY ============ -->
+<div class="page-break"></div>
+<h2>1. Executive Summary</h2>
+<p>
+  Sitara Infotech proposes an AI-powered timesheet assistant for Thrive PR + Communications
+  that eliminates manual time entry by intelligently capturing work activity across Google Workspace
+  and synchronising approved entries to Harvest.
+</p>
+<p>
+  The solution uses natural language processing and voice input to log time conversationally,
+  scans Gmail and Google Calendar to suggest entries automatically, and introduces a
+  <strong>draft-and-approve workflow</strong> &mdash; entries are reviewed by the user in a
+  Google Sheet before anything reaches Harvest.
+</p>
+<p>
+  A fully functional proof of concept has already been built and demonstrated live.
+  This document covers the <strong>production implementation</strong> for up to 60 users,
+  priced to minimise recurring monthly cost while covering infrastructure, AI processing,
+  and ongoing platform support.
+</p>
+
+<!-- ============ 2. CURRENT POSITION ============ -->
+<h2>2. Current Position</h2>
+
+<h3>Proof of Concept &mdash; Completed</h3>
+<p>
+  A working POC has been built and demonstrated at no cost to Thrive.
+  The live demo includes:
+</p>
+<ul>
+  <li>AI-powered time logging via natural language chat and voice dictation</li>
+  <li>Google Calendar integration &mdash; automatic meeting detection</li>
+  <li>Google Drive integration &mdash; document activity tracking</li>
+  <li>Harvest API integration &mdash; live time entry creation and sync</li>
+  <li>Google SSO authentication</li>
+  <li>Data persistence (Supabase) and Google Sheets reporting</li>
+</ul>
+
+<div class="callout callout-green">
+  <strong>The current live demo serves as the no-cost proof of concept.</strong>
+  The next step is a paid production implementation aligned to Thrive's real workflow,
+  credentials, and user base.
+</div>
+
+<h3>What Changes for Production</h3>
+<p>Tariq's team has identified enhancements needed for a 50&ndash;60 user rollout:</p>
+<ul>
+  <li><strong>Gmail integration</strong> &mdash; AI reads email activity and suggests time entries by project</li>
+  <li><strong>Draft-first approval workflow</strong> &mdash; entries staged in app and Google Sheets; only pushed to Harvest after user approval</li>
+  <li><strong>Multi-user rollout</strong> &mdash; individual profiles, data isolation, and onboarding for 50&ndash;60 users</li>
+  <li><strong>Admin visibility</strong> &mdash; draft status, sync status, and team overview for managers</li>
+  <li><strong>Production hardening</strong> &mdash; security, monitoring, and real Harvest credentials</li>
+</ul>
+
+<!-- ============ 3. TARGET WORKFLOW ============ -->
+<div class="page-break"></div>
+<h2>3. Target Workflow</h2>
+<p>
+  The production system operates on an <strong>approval-first</strong> model.
+  No entry reaches Harvest without explicit user sign-off.
+</p>
+
+<ol class="workflow">
+  <li>
+    <strong>Capture</strong><br>
+    User dictates or types time entries, or the AI identifies activity from Gmail, Calendar, and Drive.
+  </li>
+  <li>
+    <strong>Draft</strong><br>
+    AI creates structured draft entries with project, task, hours, and notes.
+    Low-confidence suggestions are flagged with clarifying questions.
+  </li>
+  <li>
+    <strong>Stage</strong><br>
+    Draft entries are stored in the app and mirrored to a Google Sheet
+    &mdash; the user's personal timesheet register.
+  </li>
+  <li>
+    <strong>Review &amp; Approve</strong><br>
+    User reviews entries, edits as needed, and approves.
+    Managers can view draft and approval status across the team.
+  </li>
+  <li>
+    <strong>Sync to Harvest</strong><br>
+    Only approved entries are pushed to Harvest. Status updates from Draft &rarr; Submitted.
+  </li>
+</ol>
+
+<div class="callout">
+  This workflow reduces trust risk at scale, creates a visible review layer for managers,
+  and works regardless of which AI model powers the system.
+</div>
+
+<!-- ============ 4. SCOPE OF WORK ============ -->
+<h2>4. Scope of Work</h2>
+
+<h3>Google-Native Production Rollout</h3>
+<table>
+  <tr><td style="width:140px; font-weight:600;">Duration</td><td>4 weeks</td></tr>
+  <tr><td style="font-weight:600;">Users</td><td>Up to 60</td></tr>
+  <tr><td style="font-weight:600;">Objective</td><td>Production deployment of the approval-first timesheet workflow</td></tr>
+</table>
+
+<h4>Included</h4>
+<ul>
+  <li>AI-powered voice and text time logging</li>
+  <li>Google SSO login for all Thrive users</li>
+  <li>Google Calendar &mdash; meeting detection and time entry suggestions</li>
+  <li>Gmail integration &mdash; email activity scanning with project-aware suggestions</li>
+  <li>Google Drive &mdash; document activity signals and revision-history checks</li>
+  <li>Draft timesheet register in app and Google Sheet (per user)</li>
+  <li>User review, edit, and approval workflow</li>
+  <li>Harvest sync only after explicit user approval</li>
+  <li>Real Thrive Harvest workspace configuration and project/task mapping</li>
+  <li>Multi-user support with individual profiles and data isolation</li>
+  <li>Admin visibility &mdash; draft status, sync status, and team overview</li>
+  <li>Production hardening &mdash; security, rate limiting, logging, monitoring</li>
+  <li>Google OAuth verification for organisation-wide access</li>
+  <li>User onboarding and training documentation</li>
+  <li>Post go-live hypercare for runtime stabilisation and rollout support</li>
+</ul>
+
+<h4>Explicitly Excluded</h4>
+<ul>
+  <li>Browser extension and non-Google activity capture</li>
+  <li>Desktop application tracking</li>
+  <li>Mobile application</li>
+  <li>Slack, Microsoft Teams, or other chat integrations</li>
+  <li>Enterprise SSO / SAML / SCIM</li>
+  <li>Advanced analytics dashboards</li>
+  <li>Google Workspace Marketplace distribution</li>
+</ul>
+
+<div class="callout">
+  <strong>Future phases:</strong> Broader coverage beyond Google Workspace (browser extension,
+  non-Google activity capture, advanced analytics) can be discussed and scoped separately
+  once the Google-native rollout is stable.
+</div>
+
+<!-- ============ 5. PRICING ============ -->
+<div class="page-break"></div>
+<h2>5. Pricing Schedule</h2>
+
+<h3>5.1 &nbsp;Implementation Fees (One-Time)</h3>
+<table>
+  <tr>
+    <th>Phase</th>
+    <th>Description</th>
+    <th class="amount">Investment (USD)</th>
+  </tr>
+  <tr>
+    <td>POC</td>
+    <td>Proof of concept &mdash; completed and demonstrated</td>
+    <td class="amount">Delivered</td>
+  </tr>
+  <tr>
+    <td>Production</td>
+    <td>Google-native production rollout (up to 60 users).
+      Includes 10 business days of post go-live hypercare.</td>
+    <td class="amount">$5,450</td>
+  </tr>
+</table>
+
+<h3>5.2 &nbsp;Monthly Service Fee (Per User)</h3>
+<table>
+  <tr>
+    <th>Commitment</th>
+    <th>Per User / Month (USD)</th>
+    <th>Minimum Users</th>
+  </tr>
+  <tr class="highlight-row">
+    <td>Annual licence (recommended)</td>
+    <td class="amount">$5.00</td>
+    <td>50</td>
+  </tr>
+  <tr>
+    <td>Month-to-month</td>
+    <td class="amount">$7.50</td>
+    <td>50</td>
+  </tr>
+</table>
+
+<p>A minimum billing floor of <strong>50 users</strong> applies regardless of active user count,
+  ensuring predictable service levels and infrastructure allocation.</p>
+
+<p>Monthly fee is all-inclusive:</p>
+<ul>
+  <li>AI processing (natural language chat + voice)</li>
+  <li>Google Workspace integrations (Calendar, Gmail, Drive)</li>
+  <li>Harvest synchronisation</li>
+  <li>Draft timesheet generation &amp; approval workflow</li>
+  <li>Cloud hosting, data storage &amp; backups</li>
+  <li>Platform updates &amp; minor improvements</li>
+  <li>Email support during business hours (AEST / NZST)</li>
+</ul>
+
+<div class="callout callout-amber">
+  <strong>Note:</strong> Monthly fee covers hosting, maintenance, and bug fixes.
+  Custom feature development, workflow changes, or significant enhancements
+  beyond the agreed scope are quoted separately.
+</div>
+
+<h3>5.3 &nbsp;Annual Cost Projection (60 Users, Annual Commitment)</h3>
+<table>
+  <tr>
+    <th>Item</th>
+    <th class="amount">Year 1 (USD)</th>
+    <th class="amount">Year 2+ (USD)</th>
+  </tr>
+  <tr>
+    <td>Implementation</td>
+    <td class="amount">$5,450</td>
+    <td class="amount">&mdash;</td>
+  </tr>
+  <tr>
+    <td>Annual licence &nbsp;(60 &times; $5.00 &times; 12)</td>
+    <td class="amount">$3,600</td>
+    <td class="amount">$3,600</td>
+  </tr>
+  <tr class="highlight-row">
+    <td><strong>Total</strong></td>
+    <td class="amount"><strong>$9,050</strong></td>
+    <td class="amount"><strong>$3,600</strong></td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>Effective cost:</strong>
+  Year 1 = $12.57/user/month &nbsp;|&nbsp;
+  Year 2+ = $5.00/user/month<br>
+  <strong>Month-to-month comparison:</strong> 60 users &times; $7.50 = $450/month ($5,400/year) &mdash;
+  annual licence saves Thrive $1,800/year.
+</div>
+
+<h3>5.4 &nbsp;Market Comparison</h3>
+<table>
+  <tr>
+    <th>Solution</th>
+    <th class="amount">Per User / Month</th>
+    <th>AI-Powered</th>
+  </tr>
+  <tr>
+    <td>Harvest</td>
+    <td class="amount">$12.00</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Toggl Track (Starter)</td>
+    <td class="amount">$9.00</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Toggl Track (Premium)</td>
+    <td class="amount">$18.00</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>Clockify (Pro)</td>
+    <td class="amount">$7.99</td>
+    <td>No</td>
+  </tr>
+  <tr>
+    <td>TimeCamp</td>
+    <td class="amount">$6.99</td>
+    <td>No</td>
+  </tr>
+  <tr class="highlight-row">
+    <td>Thrive Timesheet Assistant (annual, 50+ users)</td>
+    <td class="amount">$5.00</td>
+    <td><strong>Yes</strong></td>
+  </tr>
+</table>
+
+<!-- ============ 6. TIMELINE ============ -->
+<div class="page-break"></div>
+<h2>6. Timeline</h2>
+
+<h3>Google-Native Production Rollout</h3>
+<table>
+  <tr>
+    <th>Milestone</th>
+    <th>Week</th>
+    <th>Dependencies</th>
+  </tr>
+  <tr>
+    <td>Kickoff, Harvest config &amp; draft approval workflow</td>
+    <td>1</td>
+    <td>Harvest API token, Account ID, and user emails received</td>
+  </tr>
+  <tr>
+    <td>Gmail integration &amp; Drive activity signals</td>
+    <td>2</td>
+    <td>Harvest configured</td>
+  </tr>
+  <tr>
+    <td>Sprint 2: Multi-user support &amp; admin visibility</td>
+    <td>2&ndash;3</td>
+    <td>Sprint 1 complete</td>
+  </tr>
+  <tr>
+    <td>Testing, hardening &amp; deployment</td>
+    <td>3&ndash;4</td>
+    <td>Development complete</td>
+  </tr>
+  <tr>
+    <td>User onboarding &amp; go-live</td>
+    <td>4</td>
+    <td>Deployment verified</td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>Delivery:</strong> approximately 4 weeks from receiving Harvest credentials and user list.
+</div>
+
+<!-- ============ 7. CLIENT RESPONSIBILITIES ============ -->
+<h2>7. Client Responsibilities</h2>
+<p>To ensure successful delivery, Thrive PR + Communications will:</p>
+<ul>
+  <li>Provide a Harvest API access token and Account ID</li>
+  <li>Provide user email addresses (Google / Gmail accounts) for onboarding</li>
+  <li>Designate a project lead for feedback, testing, and approvals</li>
+  <li>Ensure users have active Google accounts and Harvest licences</li>
+  <li>Provide the Harvest project and client list for AI mapping configuration</li>
+  <li>Authorise Google OAuth scopes for Calendar, Gmail (read-only), and Drive (read-only)</li>
+  <li>Coordinate user onboarding during rollout</li>
+</ul>
+
+<!-- ============ 8. ITEMS FOR CONFIRMATION ============ -->
+<h2>8. Items for Confirmation</h2>
+<p>
+  To finalise the scope and begin implementation, we request Thrive's input on the following:
+</p>
+
+<table>
+  <tr>
+    <th>#</th>
+    <th>Question</th>
+    <th>Options</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>Approval cadence &mdash; how often should users review draft entries?</td>
+    <td>Daily / Weekly / Both</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Gmail analysis depth &mdash; should the AI scan sent mail only, or full client threads?</td>
+    <td>Sent mail first / Full threads</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Harvest entry status &mdash; should approved entries land in Harvest as drafts or ready-to-submit?</td>
+    <td>Draft / Ready-to-submit</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>Rollout plan &mdash; start with a smaller pilot group or deploy to 50&ndash;60 users directly?</td>
+    <td>Pilot first / Direct rollout</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Admin owner &mdash; who will serve as the admin lead for the rollout?</td>
+    <td>Name / Role</td>
+  </tr>
+</table>
+
+<!-- ============ 9. SUPPORT ============ -->
+<h2>9. Support &amp; Maintenance</h2>
+
+<h3>Included in Implementation Fee</h3>
+<ul>
+  <li>Configuration, deployment, and production go-live</li>
+  <li>Admin handover and onboarding documentation</li>
+  <li>Ten business days of post go-live hypercare</li>
+  <li>Remote triage and resolution of runtime issues directly related to the delivered scope</li>
+  <li>Minor rollout-era tweaks required to make the agreed workflow operational</li>
+</ul>
+
+<h3>Included in Monthly Service Fee</h3>
+<ul>
+  <li>Email support during business hours (AEST / NZST)</li>
+  <li>Bug fixes and security patches</li>
+  <li>Platform updates and minor improvements</li>
+  <li>99.5% uptime target (excluding scheduled maintenance)</li>
+  <li>Data backups and disaster recovery</li>
+</ul>
+
+<h3>Additional Rollout / Onboarding Support</h3>
+<ul>
+  <li>Extended user onboarding, admin assistance, office hours, or high-touch rollout support beyond the included hypercare period can be provided as a separate support pack or time-and-materials engagement</li>
+  <li>If Thrive requires Sitara Infotech to actively manage onboarding across the wider 50&ndash;60 user rollout, that support will be scoped and priced separately before commencement</li>
+</ul>
+
+<h3>Not Included</h3>
+<ul>
+  <li>Custom feature development beyond the agreed scope</li>
+  <li>On-site training or workshops</li>
+  <li>Unlimited onboarding assistance for all end users</li>
+  <li>Third-party API changes requiring significant rearchitecture</li>
+  <li>Data migration from other time tracking systems</li>
+</ul>
+
+<!-- ============ 10. TERMS ============ -->
+<div class="page-break"></div>
+<h2>10. Terms &amp; Conditions</h2>
+
+<h3>Payment Terms</h3>
+<ul>
+  <li>Implementation fees: 50% due on project commencement, 50% on delivery</li>
+  <li>Monthly service fees: billed at the beginning of each calendar month</li>
+  <li>Minimum billing: 50 users (regardless of active user count)</li>
+  <li>All amounts in United States Dollars (USD)</li>
+  <li>Any support requested outside the agreed implementation scope, included hypercare period, or monthly service coverage will be quoted separately</li>
+</ul>
+
+<h3>Commitment Options</h3>
+<ul>
+  <li><strong>Annual licence:</strong> $5.00/user/month &mdash; 12-month term, 50-user minimum. Thrive licenses 50+ seats for the year; usage within that allocation is flexible.</li>
+  <li><strong>Month-to-month:</strong> $7.50/user/month &mdash; 50-user minimum, cancel with 30 days written notice</li>
+</ul>
+
+<h3>Data &amp; Privacy</h3>
+<ul>
+  <li>All user data is encrypted in transit (TLS) and at rest</li>
+  <li>Gmail and Drive access is read-only &mdash; the system never modifies, sends, or deletes user content</li>
+  <li>Data is stored in secure cloud infrastructure with access controls</li>
+  <li>Thrive retains full ownership of all timesheet data</li>
+  <li>On cancellation, all data can be exported and will be deleted from Sitara Infotech systems within 30 days</li>
+</ul>
+
+<h3>Intellectual Property</h3>
+<ul>
+  <li>The AI Timesheet Assistant platform remains the intellectual property of Sitara Infotech</li>
+  <li>Thrive is granted a non-exclusive licence to use the platform for the duration of the service agreement</li>
+  <li>All Thrive data, configurations, and customisations belong to Thrive</li>
+  <li>This proposal is for implementation and licensed use of the platform; source-code transfer or assignment is not included unless separately agreed in writing</li>
+</ul>
+
+<h3>Validity</h3>
+<ul>
+  <li>This proposal is valid for 60 days from the date of issue (24 March 2026)</li>
+  <li>Pricing is subject to review after 12 months of service</li>
+</ul>
+
+<!-- ============ 11. ACCEPTANCE ============ -->
+<h2>11. Acceptance</h2>
+<p>
+  By signing below, both parties agree to the scope, deliverables, timeline, and pricing
+  outlined in this Statement of Work.
+</p>
+
+<div class="signatures">
+  <div class="sig-block">
+    <h4>Thrive PR + Communications</h4>
+    <div class="sig-line"></div>
+    <div class="sig-label">Name</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Title</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Date</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Signature</div>
+  </div>
+  <div class="sig-block">
+    <h4>Sitara Infotech</h4>
+    <div class="sig-line"></div>
+    <div class="sig-label">Name</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Title</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Date</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Signature</div>
+  </div>
+</div>
+
+<div class="doc-footer">
+  Sitara Infotech &nbsp;&bull;&nbsp; Statement of Work v2.0 &nbsp;&bull;&nbsp; 24 March 2026 &nbsp;&bull;&nbsp; Confidential
+</div>
+
+</body>
+</html>

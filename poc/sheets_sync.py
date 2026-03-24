@@ -92,3 +92,22 @@ def delete_entry_from_sheet(entry_id: str) -> bool:
     except Exception as e:
         print(f"Google Sheets delete error: {e}")
     return False
+
+
+def update_entry_status_in_sheet(entry_id: str, new_status: str) -> bool:
+    """Update the Status column for an entry row found by entry ID."""
+    sheet = _get_sheet()
+    if sheet is None:
+        return False
+
+    try:
+        cell = sheet.find(entry_id)
+        if cell:
+            # Status is column 9 in the header layout:
+            # Date(1), User(2), Client(3), Project Code(4), Project Name(5),
+            # Task(6), Hours(7), Notes(8), Status(9), Entry ID(10), Created At(11)
+            sheet.update_cell(cell.row, 9, new_status)
+            return True
+    except Exception as e:
+        print(f"Google Sheets status update error: {e}")
+    return False

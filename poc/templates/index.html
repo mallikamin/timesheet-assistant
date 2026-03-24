@@ -143,6 +143,24 @@
         .btn-drive:hover { background: #bbdefb; border-color: #90caf9; }
         .btn-drive:disabled { background: #f5f5f5; color: #bbb; border-color: #e0e0e0; cursor: not-allowed; }
         .btn-drive .drive-icon { font-size: 15px; }
+        .btn-gmail {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: #fce4ec;
+            color: #c62828;
+            border: 1px solid #f8bbd0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .btn-gmail:hover { background: #f8bbd0; border-color: #f48fb1; }
+        .btn-gmail:disabled { background: #f5f5f5; color: #bbb; border-color: #e0e0e0; cursor: not-allowed; }
+        .btn-gmail .gmail-icon { font-size: 15px; }
         .suggest-buttons { display: flex; gap: 8px; }
         .chat-messages {
             flex: 1;
@@ -336,6 +354,89 @@
         }
         .entry-delete:hover { color: #e53935; }
 
+        .entry-card.approved {
+            border-left: 3px solid #4caf50;
+            background: #f9fdf9;
+        }
+        .entry-status.approved {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .entry-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .btn-approve {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-approve:hover { background: #388e3c; }
+        .btn-approve:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-edit-entry {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn-edit-entry:hover { background: #bbdefb; }
+        .btn-approve-all {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 6px;
+        }
+        .btn-approve-all:hover { background: #388e3c; }
+        .btn-approve-all:disabled { background: #ccc; cursor: not-allowed; }
+        .entry-edit-field {
+            width: 100%;
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .entry-edit-actions {
+            display: flex;
+            gap: 4px;
+            margin-top: 6px;
+        }
+        .btn-save-edit {
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .btn-save-edit:hover { background: #16213e; }
+        .btn-cancel-edit {
+            background: #eee;
+            color: #333;
+            border: none;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .btn-cancel-edit:hover { background: #ddd; }
+
         .empty-entries {
             text-align: center;
             color: #aaa;
@@ -406,6 +507,9 @@
                 <button class="btn-drive" id="driveBtn" title="Pull today's Drive activity">
                     <span class="drive-icon">&#128196;</span> Drive
                 </button>
+                <button class="btn-gmail" id="gmailBtn" title="Pull today's email activity">
+                    <span class="gmail-icon">&#9993;</span> Gmail
+                </button>
             </div>
         </div>
         <div class="chat-messages" id="chatMessages">
@@ -430,8 +534,11 @@ What have you been up to?</div>
     <!-- Entries Panel -->
     <div class="entries-panel">
         <div class="entries-header">
-            <h2>Draft Entries</h2>
+            <h2>Today's Entries</h2>
             <div class="entries-summary" id="entriesSummary">No entries yet</div>
+            <button class="btn-approve-all" id="approveAllBtn" style="display:none;" onclick="approveAll()">
+                Approve All Drafts &rarr; Harvest
+            </button>
         </div>
         <div class="entries-list" id="entriesList">
             <div class="empty-entries">
@@ -448,6 +555,7 @@ What have you been up to?</div>
     const micBtn = document.getElementById('micBtn');
     const calendarBtn = document.getElementById('calendarBtn');
     const driveBtn = document.getElementById('driveBtn');
+    const gmailBtn = document.getElementById('gmailBtn');
     const currentUserName = document.getElementById('currentUserName').value;
     const entriesList = document.getElementById('entriesList');
     const entriesSummary = document.getElementById('entriesSummary');
@@ -549,6 +657,7 @@ What have you been up to?</div>
             if (data.entries.length === 0) {
                 entriesList.innerHTML = '<div class="empty-entries">Your time entries will appear here as you tell me what you worked on.</div>';
                 entriesSummary.textContent = 'No entries yet';
+                document.getElementById('approveAllBtn').style.display = 'none';
                 return;
             }
 
@@ -556,16 +665,36 @@ What have you been up to?</div>
             const count = data.summary.entry_count;
             entriesSummary.textContent = `${count} ${count === 1 ? 'entry' : 'entries'} \u2022 ${totalHours.toFixed(2)} hours total`;
 
+            // Show Approve All if any drafts exist
+            const hasDrafts = data.entries.some(e => e.status === 'Draft' || e.status === 'Needs Review');
+            document.getElementById('approveAllBtn').style.display = hasDrafts ? 'block' : 'none';
+
             entriesList.innerHTML = '';
             // Show newest first
             for (const entry of data.entries.reverse()) {
                 const card = document.createElement('div');
-                card.className = 'entry-card';
-                const statusClass = entry.status === 'Draft' ? 'draft' : 'needs-review';
+                const isApproved = entry.status === 'Approved';
+                card.className = `entry-card${isApproved ? ' approved' : ''}`;
+
+                let statusClass = 'draft';
+                if (entry.status === 'Needs Review') statusClass = 'needs-review';
+                if (entry.status === 'Approved') statusClass = 'approved';
+
                 const dateObj = new Date(entry.date + 'T00:00:00');
                 const dateStr = dateObj.toLocaleDateString('en-AU', {
                     weekday: 'short', day: 'numeric', month: 'short'
                 });
+
+                let actionsHtml = '';
+                if (!isApproved) {
+                    actionsHtml = `
+                        <div class="entry-actions">
+                            <button class="btn-approve" onclick="approveEntry('${entry.id}')">Approve &rarr; Harvest</button>
+                            <button class="btn-edit-entry" onclick="editEntry('${entry.id}', this)">Edit</button>
+                        </div>
+                    `;
+                }
+
                 card.innerHTML = `
                     <button class="entry-delete" onclick="deleteEntry('${entry.id}')" title="Delete entry">&times;</button>
                     <div class="entry-client">${entry.client}</div>
@@ -575,8 +704,9 @@ What have you been up to?</div>
                         <span class="entry-status ${statusClass}">${entry.status}</span>
                         ${entry.harvest_id ? '<span class="entry-status harvest-synced">Harvest</span>' : ''}
                     </div>
-                    <div class="entry-notes">${entry.notes}</div>
+                    <div class="entry-notes">${entry.notes || ''}</div>
                     <div class="entry-date">${dateStr}</div>
+                    ${actionsHtml}
                 `;
                 entriesList.appendChild(card);
             }
@@ -710,6 +840,159 @@ What have you been up to?</div>
     }
 
     driveBtn.addEventListener('click', suggestFromDrive);
+
+    // --- Gmail Suggest ---
+
+    async function suggestFromGmail() {
+        if (isProcessing) return;
+        isProcessing = true;
+        gmailBtn.disabled = true;
+        calendarBtn.disabled = true;
+        driveBtn.disabled = true;
+        sendBtn.disabled = true;
+
+        addSystemMessage('Scanning your email activity...');
+        showTyping();
+
+        try {
+            const res = await fetch('/api/gmail/suggest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date: null,
+                    history: conversationHistory,
+                }),
+            });
+
+            const data = await res.json();
+            hideTyping();
+
+            if (data.response) {
+                conversationHistory.push({
+                    role: 'user',
+                    content: '[Pulled email activity and asked for suggestions]'
+                });
+                conversationHistory.push({
+                    role: 'assistant',
+                    content: data.response
+                });
+                addMessage('assistant', data.response);
+            }
+
+            if (data.entries_created && data.entries_created.length > 0) {
+                for (const entry of data.entries_created) {
+                    const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
+                    addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+                }
+                refreshEntries();
+            }
+        } catch (err) {
+            hideTyping();
+            addMessage('assistant', 'Sorry, could not fetch email activity. Please try again.');
+            console.error(err);
+        }
+
+        isProcessing = false;
+        gmailBtn.disabled = false;
+        driveBtn.disabled = false;
+        calendarBtn.disabled = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+    }
+
+    gmailBtn.addEventListener('click', suggestFromGmail);
+
+    // --- Approval Functions ---
+
+    async function approveEntry(entryId) {
+        try {
+            const res = await fetch(`/api/entries/${entryId}/approve`, { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                addSystemMessage('Entry approved and pushed to Harvest.');
+                refreshEntries();
+            } else {
+                addSystemMessage(`Approval failed: ${data.error || 'Unknown error'}`);
+            }
+        } catch (err) {
+            console.error('Failed to approve entry:', err);
+            addSystemMessage('Failed to approve entry. Please try again.');
+        }
+    }
+
+    async function approveAll() {
+        const btn = document.getElementById('approveAllBtn');
+        btn.disabled = true;
+        btn.textContent = 'Approving...';
+
+        try {
+            const res = await fetch('/api/entries/approve-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: currentUserName }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                const approved = data.results.filter(r => r.approved).length;
+                const failed = data.results.filter(r => !r.approved).length;
+                let msg = `${approved} ${approved === 1 ? 'entry' : 'entries'} approved and pushed to Harvest.`;
+                if (failed > 0) msg += ` ${failed} failed.`;
+                addSystemMessage(msg);
+                refreshEntries();
+            }
+        } catch (err) {
+            console.error('Failed to approve all:', err);
+            addSystemMessage('Failed to approve entries. Please try again.');
+        }
+
+        btn.disabled = false;
+        btn.textContent = 'Approve All Drafts \u2192 Harvest';
+    }
+
+    function editEntry(entryId, buttonEl) {
+        const card = buttonEl.closest('.entry-card');
+        const notesEl = card.querySelector('.entry-notes');
+        const actionsEl = card.querySelector('.entry-actions');
+
+        const currentNotes = notesEl.textContent;
+        const hoursText = card.querySelector('.entry-hours').textContent;
+        const currentHours = parseFloat(hoursText);
+
+        actionsEl.innerHTML = `
+            <div style="width:100%">
+                <label style="font-size:11px;color:#666;">Hours:</label>
+                <input type="number" class="entry-edit-field" id="editHours-${entryId}"
+                       value="${currentHours}" step="0.25" min="0.08">
+                <label style="font-size:11px;color:#666;margin-top:4px;display:block;">Notes:</label>
+                <input type="text" class="entry-edit-field" id="editNotes-${entryId}"
+                       value="${currentNotes}">
+                <div class="entry-edit-actions">
+                    <button class="btn-save-edit" onclick="saveEdit('${entryId}')">Save</button>
+                    <button class="btn-cancel-edit" onclick="refreshEntries()">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    async function saveEdit(entryId) {
+        const hours = parseFloat(document.getElementById(`editHours-${entryId}`).value);
+        const notes = document.getElementById(`editNotes-${entryId}`).value;
+
+        try {
+            const res = await fetch(`/api/entries/${entryId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hours, notes }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                addSystemMessage('Entry updated.');
+                refreshEntries();
+            }
+        } catch (err) {
+            console.error('Failed to update entry:', err);
+        }
+    }
 
     // --- Voice Input (Web Speech API) ---
 

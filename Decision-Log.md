@@ -234,3 +234,39 @@ Impact on plan:
 - Phase 1: Demo in client hands for validation.
 - Phase 2: Ready to implement Harvest integration once token provided.
 - Timeline: Waiting on client feedback to proceed.
+
+---
+
+## 2026-03-24 (Tariq Voice Notes - SoW Direction)
+Attendees: Tariq Munir (voice notes), Malik Amin
+
+Context:
+- Tariq asked for a proper Statement of Work with full setup, implementation, and per-user monthly pricing for 50-60 users.
+- Recurring monthly cost must be minimized while staying profitable for Sitara Infotech.
+- Tariq explicitly asked for Gmail integration and a draft approval workflow before anything is pushed into Harvest.
+- Tariq suggested the POC could be treated as free if needed.
+- Pricing direction now needs to be in USD rather than AUD.
+
+Decisions:
+1. Treat the current live demo as the free POC already delivered; the next step is a paid implementation SoW.
+2. Keep the current SoW focused on Google-native rollout: Gmail, Calendar, Drive/low-hanging Google signals, draft approval workflow, Harvest sync after approval, and 50-60 user rollout.
+3. Keep pricing for the Google-native SoW within the original quoted `USD 3K-5K` band by avoiding scope creep.
+4. Browser extension / non-Google capture remains a separate Phase 2 build and should be quoted separately.
+5. Monthly pricing target for 50+ users should land around `USD 5-6/user/month`, with a minimum-user floor.
+
+Open questions:
+1. Should Gmail analysis start with sent mail only, or include deeper client-thread reads?
+2. Should approved entries land in Harvest as drafts or directly as ready-to-submit entries?
+3. Does Thrive want daily approvals, weekly approvals, or both?
+4. Does Tariq want the SoW as a formal PDF proposal, a Word-style document, or both?
+
+Action items:
+1. [Malik] Draft internal SoW plan aligned to USD pricing and 50-60 user rollout. [Done]
+2. [Malik] Split scope into Google-native SoW vs separate browser-extension Phase 2 plan. [Done]
+3. [Malik] Prepare professional client-facing SoW/proposal draft. [Next]
+4. [Tariq] Confirm preferred approval workflow and Gmail privacy boundary. [Next call]
+
+Impact on plan:
+- Phase 1: Existing live demo can be treated as the free POC.
+- Phase 2: Reframed as Google-native rollout with Gmail + approval-first workflow.
+- Phase 3: Browser extension / non-Google capture remains a separate paid build after the Google-native rollout.
