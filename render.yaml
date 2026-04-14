@@ -10,3 +10,7 @@ services:
         sync: false
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: HARVEST_CLIENT_ID
+        sync: false
+      - key: HARVEST_CLIENT_SECRET
+        sync: false

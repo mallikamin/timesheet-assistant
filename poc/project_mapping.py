@@ -61,12 +61,12 @@ HARVEST_PROJECTS_FALLBACK = [
 ]
 
 
-def _load_from_harvest() -> List[Dict]:
+def _load_from_harvest(access_token: str = None) -> List[Dict]:
     """Pull live project/task data from Harvest API and format for the prompt."""
-    if not harvest_api.is_configured():
+    if not harvest_api.is_configured() and not access_token:
         return []
 
-    projects = harvest_api.get_projects_with_tasks()
+    projects = harvest_api.get_projects_with_tasks(access_token)
     if not projects:
         return []
 
@@ -100,17 +100,17 @@ def _load_from_harvest() -> List[Dict]:
     return result
 
 
-def get_projects() -> List[Dict]:
+def get_projects(access_token: str = None) -> List[Dict]:
     """Get project list — live from Harvest if available, otherwise fallback."""
-    live = _load_from_harvest()
+    live = _load_from_harvest(access_token)
     if live:
         return live
     return HARVEST_PROJECTS_FALLBACK
 
 
-def get_all_projects_for_prompt() -> str:
+def get_all_projects_for_prompt(access_token: str = None) -> str:
     """Format all projects and their tasks for the AI system prompt."""
-    projects = get_projects()
+    projects = get_projects(access_token)
     lines = []
     for p in projects:
         lines.append(f"\nProject: {p['project']}")

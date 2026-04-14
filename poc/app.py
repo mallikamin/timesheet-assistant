@@ -6,11 +6,13 @@ Google SSO authentication.
 
 import json
 import os
+import time
 from datetime import date
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import anthropic
+import httpx
 import uvicorn
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
@@ -25,6 +27,7 @@ import drive_sync
 import gmail_sync
 import harvest_api
 import harvest_mock
+import harvest_oauth
 import sheets_sync
 from project_mapping import get_all_projects_for_prompt
 
@@ -50,11 +53,21 @@ oauth.register(
     },
 )
 
+# Harvest OAuth (optional - falls back to PAT if not configured)
+oauth.register(
+    name="harvest",
+    client_id=os.getenv("HARVEST_CLIENT_ID", ""),
+    client_secret=os.getenv("HARVEST_CLIENT_SECRET", ""),
+    access_token_url="https://id.getharvest.com/api/v2/oauth2/token",
+    authorize_url="https://id.getharvest.com/oauth2/authorize",
+    client_kwargs={},
+)
+
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 PILOT_USERS = ["Tariq Munir", "Malik Amin", "Jawad Saleem"]
 
-SYSTEM_PROMPT = f"""You are a friendly, efficient timesheet assistant for a PR and communications agency based in Australia/New Zealand. Users tell you what they worked on in natural language (voice or text), and you help log their time into Harvest.
+SYSTEM_PROMPT_TEMPLATE = """You are a friendly, efficient timesheet assistant for a PR and communications agency based in Australia/New Zealand. Users tell you what they worked on in natural language (voice or text), and you help log their time into Harvest.
 
 IMPORTANT — Harvest structure:
 - Each "Project" below is a client/project (e.g. Acuity, Afterpay).
@@ -80,7 +93,7 @@ Example flow:
 
 Rules:
 - Minimum time block is 5 minutes (0.08 hours). Round up to nearest 5 minutes.
-- Default date is today ({date.today().strftime('%A, %d/%m/%Y')}) unless the user specifies otherwise.
+- Default date is today ({{today_display}}) unless the user specifies otherwise.
 - Use DD/MM/YYYY date format (Australian standard).
 - Understand AU/NZ English: "arvo" = afternoon, "brekkie" = breakfast, "reckon" = think, "heaps" = a lot, "keen" = eager, "no worries" = understood, "suss out" = investigate.
 - When a user mentions multiple items, handle each one separately.
@@ -112,11 +125,45 @@ If confidence is low, set status to "Needs Review" instead of "Draft".
 
 You can log multiple entries in one response — just include multiple ```ENTRY blocks.
 
-Available Projects and Tasks:
-{get_all_projects_for_prompt()}
+Available tools:
+You have access to these tools to scan the user's Google Workspace data:
+- scan_emails: Search Gmail for email activity. Filter by date range, sender, recipient, CC, subject, or keyword. Returns metadata only (subject, sender, recipients, timestamps) — never email body content.
+- scan_calendar: Fetch Google Calendar events for a date or date range. Returns event titles, times, durations, and attendees.
+- scan_drive: Fetch Google Drive file activity for a date or date range. Returns file names, types, and modification times — no file content.
 
-Pilot users: {', '.join(PILOT_USERS)}
+When to use tools:
+- When the user says "check my emails", "scan my emails", "what meetings did I have", "scan my drive", etc. — use the appropriate tool.
+- When the user says "what did I work on last week" or similar — use ALL THREE tools for the date range to build a full picture.
+- When the user mentions a specific person or email address, use scan_emails with a sender/recipient filter.
+- You can call multiple tools at once if needed (e.g., emails + calendar for a complete picture).
+- After receiving tool results, analyse the data and suggest time entries mapped to Harvest projects.
+- Always ask clarifying questions if you can't confidently map activities to projects.
+
+Date handling:
+- Today's date is {{today_iso}} ({{today_day}}).
+- For "last week", calculate Monday to Friday of the previous week.
+- For "this week", calculate Monday of the current week to today.
+- For "last month", use the 1st of the previous month to the last day of that month.
+- For "this month", use the 1st of the current month to today.
+- Always pass dates in YYYY-MM-DD format to tools.
+
+Privacy: You only receive email metadata (subject lines, sender, recipients, timestamps). You never see email body content. This is by design for Australian privacy compliance.
+
+Available Projects and Tasks:
+{{projects_text}}
+
+Pilot users: {{pilot_users}}
 """
+
+
+def build_system_prompt(harvest_access_token: str = None) -> str:
+    """Build the system prompt with current date and projects list."""
+    projects_text = get_all_projects_for_prompt(harvest_access_token)
+    return SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
+        .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
+        .replace("{{today_day}}", date.today().strftime('%A')) \
+        .replace("{{projects_text}}", projects_text) \
+        .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
 
 
 def get_current_user(request: Request) -> Optional[Dict]:
@@ -172,6 +219,153 @@ def parse_entries_from_response(text: str) -> Tuple[str, List[Dict]]:
     return clean_text.strip(), entries
 
 
+# --- Tool Definitions for Claude tool_use ---
+
+TOOLS = [
+    {
+        "name": "scan_emails",
+        "description": (
+            "Scan the user's Gmail to find email activity. Use this when the user asks about their emails, "
+            "wants to log time based on email work, or you need to understand their communication patterns. "
+            "Returns metadata only (subject, sender, recipients, timestamps) — no email body content. "
+            "You can filter by date range, sender, recipient, CC, subject, or keyword. "
+            "Default to today if the user doesn't specify a date."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format. Defaults to today.",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format (inclusive). Defaults to same as date_from.",
+                },
+                "sender": {
+                    "type": "string",
+                    "description": "Filter by sender email address (e.g. 'tariq@thrive.com').",
+                },
+                "recipient": {
+                    "type": "string",
+                    "description": "Filter by recipient email address.",
+                },
+                "cc": {
+                    "type": "string",
+                    "description": "Filter by CC email address.",
+                },
+                "subject": {
+                    "type": "string",
+                    "description": "Search for text in email subject lines.",
+                },
+                "keyword": {
+                    "type": "string",
+                    "description": "General search term to find in email metadata.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum emails to return (default 30, max 100).",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "scan_calendar",
+        "description": (
+            "Scan the user's Google Calendar to find meetings and events. Use this when the user asks about "
+            "their meetings, schedule, or wants to log time based on calendar events. "
+            "Returns event summaries, times, durations, and attendees. "
+            "Default to today if the user doesn't specify a date."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format. Defaults to today.",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format (inclusive). Defaults to same as date_from.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "scan_drive",
+        "description": (
+            "Scan the user's Google Drive for recently modified files. Use this when the user asks about "
+            "documents they worked on, or wants to log time based on document editing activity. "
+            "Returns file names, types, and modification times — no file content. "
+            "Default to today if the user doesn't specify a date."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format. Defaults to today.",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format (inclusive). Defaults to same as date_from.",
+                },
+            },
+            "required": [],
+        },
+    },
+]
+
+MAX_TOOL_ITERATIONS = 5
+
+
+async def execute_tool(tool_name: str, tool_input: Dict, access_token: str) -> str:
+    """Execute a tool call and return the result string for Claude."""
+    try:
+        if tool_name == "scan_emails":
+            emails = gmail_sync.search_emails(
+                access_token=access_token,
+                date_from=tool_input.get("date_from"),
+                date_to=tool_input.get("date_to"),
+                sender=tool_input.get("sender"),
+                recipient=tool_input.get("recipient"),
+                cc=tool_input.get("cc"),
+                subject=tool_input.get("subject"),
+                keyword=tool_input.get("keyword"),
+                max_results=tool_input.get("max_results", 30),
+            )
+            return gmail_sync.format_search_results_for_tool(emails)
+
+        elif tool_name == "scan_calendar":
+            events = calendar_sync.search_events(
+                access_token=access_token,
+                date_from=tool_input.get("date_from"),
+                date_to=tool_input.get("date_to"),
+            )
+            return calendar_sync.format_search_results_for_tool(events)
+
+        elif tool_name == "scan_drive":
+            files = drive_sync.search_files(
+                access_token=access_token,
+                date_from=tool_input.get("date_from"),
+                date_to=tool_input.get("date_to"),
+            )
+            return drive_sync.format_search_results_for_tool(files)
+
+        else:
+            return f"Unknown tool: {tool_name}"
+
+    except gmail_sync.TokenExpiredError:
+        return "ERROR: Your Google access token has expired. Please sign out and sign back in."
+    except httpx.TimeoutException:
+        return "ERROR: The Google API request timed out. Please try again."
+    except Exception as e:
+        print(f"Tool execution error ({tool_name}): {e}")
+        return f"ERROR: Failed to execute {tool_name}: {str(e)}"
+
+
 # --- Auth Routes ---
 
 @app.get("/login", response_class=HTMLResponse)
@@ -218,6 +412,45 @@ async def logout(request: Request):
     return RedirectResponse(url="/login")
 
 
+@app.get("/auth/harvest")
+async def auth_harvest(request: Request):
+    """Initiate Harvest OAuth flow."""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+
+    redirect_uri = request.url_for("auth_harvest_callback")
+    return await oauth.harvest.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/harvest/callback")
+async def auth_harvest_callback(request: Request):
+    """Handle Harvest OAuth callback."""
+    try:
+        token = await oauth.harvest.authorize_access_token(request)
+
+        # Store Harvest OAuth tokens in session
+        request.session["harvest_token"] = {
+            "access_token": token.get("access_token", ""),
+            "refresh_token": token.get("refresh_token", ""),
+            "expires_at": time.time() + token.get("expires_in", 1209600),  # 14 days
+        }
+
+        # Success - redirect to dashboard
+        return RedirectResponse(url="/")
+    except Exception as e:
+        print(f"Harvest OAuth error: {e}")
+        return RedirectResponse(url="/?harvest_error=auth_failed")
+
+
+@app.get("/auth/harvest/disconnect")
+async def harvest_disconnect(request: Request):
+    """Disconnect Harvest (remove tokens from session)."""
+    if "harvest_token" in request.session:
+        del request.session["harvest_token"]
+    return RedirectResponse(url="/")
+
+
 # --- App Routes ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -248,18 +481,141 @@ async def chat(req: ChatRequest, request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": req.message})
 
-    # Call Claude
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    )
+    # Check if Google token is available for tools
+    google_token = request.session.get("google_token")
+    has_google_access = False
+    access_token = None
 
-    ai_text = response.content[0].text
+    if google_token and google_token.get("access_token"):
+        valid_token = calendar_sync.ensure_valid_token(google_token)
+        if valid_token:
+            request.session["google_token"] = valid_token
+            access_token = valid_token["access_token"]
+            has_google_access = True
+
+    # Check if Harvest token is available
+    harvest_token = request.session.get("harvest_token")
+    harvest_access_token = None
+
+    if harvest_token and harvest_token.get("access_token"):
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            request.session["harvest_token"] = valid_token
+            harvest_access_token = valid_token["access_token"]
+
+    # Build system prompt dynamically with Harvest token (for projects list)
+    system_prompt = build_system_prompt(harvest_access_token)
+
+    # Add notes if access is missing
+    if not has_google_access:
+        system_prompt += (
+            "\n\nNOTE: The user has not granted Google Workspace access. "
+            "If they ask to scan emails, calendar, or drive, tell them to sign out "
+            "and sign back in to grant the required permissions."
+        )
+
+    if not harvest_access_token:
+        system_prompt += (
+            "\n\nNOTE: The user has not connected their Harvest account. "
+            "If they try to log time, tell them to click 'Connect Harvest' first."
+        )
+
+    # Only offer tools if Google access is available
+    tools_param = TOOLS if has_google_access else None
+
+    # === AGENTIC LOOP ===
+    iterations = 0
+    final_text = ""
+    response = None
+
+    while iterations < MAX_TOOL_ITERATIONS:
+        iterations += 1
+
+        api_kwargs = {
+            "model": "claude-sonnet-4-5-20250929",
+            "max_tokens": 2048,
+            "system": system_prompt,
+            "messages": messages,
+        }
+        if tools_param:
+            api_kwargs["tools"] = tools_param
+
+        response = client.messages.create(**api_kwargs)
+
+        if response.stop_reason == "end_turn":
+            # Claude is done — extract text
+            text_parts = []
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text_parts.append(block.text)
+            final_text = "\n".join(text_parts)
+            break
+
+        elif response.stop_reason == "tool_use":
+            # Claude wants to use tools — add its response to messages
+            messages.append({"role": "assistant", "content": response.content})
+
+            # Re-validate token (may have expired during loop)
+            if has_google_access:
+                refreshed = calendar_sync.ensure_valid_token(
+                    request.session.get("google_token", {})
+                )
+                if refreshed:
+                    request.session["google_token"] = refreshed
+                    access_token = refreshed["access_token"]
+                else:
+                    has_google_access = False
+
+            # Execute each tool call
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    print(f"  Tool call [{iterations}]: {block.name}({block.input})")
+
+                    if not has_google_access:
+                        result_text = (
+                            "ERROR: Google access is no longer available. "
+                            "Ask the user to sign out and sign back in."
+                        )
+                    else:
+                        result_text = await execute_tool(
+                            tool_name=block.name,
+                            tool_input=block.input,
+                            access_token=access_token,
+                        )
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_text,
+                    })
+
+            messages.append({"role": "user", "content": tool_results})
+
+        else:
+            # Unexpected stop reason (max_tokens, etc.)
+            text_parts = []
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text_parts.append(block.text)
+            final_text = "\n".join(text_parts) if text_parts else (
+                "I ran into an issue processing that. Could you try again?"
+            )
+            break
+
+    # Safety: if max iterations hit without end_turn
+    if iterations >= MAX_TOOL_ITERATIONS and not final_text and response:
+        text_parts = []
+        for block in response.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text)
+        final_text = "\n".join(text_parts) if text_parts else (
+            "I've gathered information but hit my processing limit. "
+            "Let me know if you'd like me to continue."
+        )
 
     # Parse any entries from the response
-    display_text, entries_data = parse_entries_from_response(ai_text)
+    display_text, entries_data = parse_entries_from_response(final_text)
 
     # Save chat messages to Supabase
     harvest_mock.save_chat_message(req.user, "user", req.message)
@@ -281,6 +637,19 @@ async def approve_all_entries(request: Request):
     if not user:
         return {"success": False, "error": "Not authenticated"}
 
+    # Get and validate Harvest token
+    harvest_token = request.session.get("harvest_token")
+    if not harvest_token:
+        # Fallback to PAT if no OAuth token (backward compatibility)
+        harvest_access_token = None
+    else:
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            request.session["harvest_token"] = valid_token
+            harvest_access_token = valid_token["access_token"]
+        else:
+            return {"success": False, "error": "Harvest token expired"}
+
     body = await request.json()
     user_name = body.get("user", user.get("name", ""))
     user_email = user.get("email", "")
@@ -290,7 +659,7 @@ async def approve_all_entries(request: Request):
 
     results = []
     for entry in drafts:
-        harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
+        harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
         harvest_entry = harvest_api.push_entry(
             client_name=entry.get("client", ""),
             task_name=entry.get("project_name", entry.get("task", "")),
@@ -298,6 +667,7 @@ async def approve_all_entries(request: Request):
             hours=float(entry.get("hours", 0)),
             notes=entry.get("notes", ""),
             user_id=harvest_user_id,
+            access_token=harvest_access_token,
         )
 
         if harvest_entry:
@@ -318,7 +688,16 @@ async def get_entries(user: str, entry_date: str = None):
 
 
 @app.delete("/api/entries/{entry_id}")
-async def delete_entry(entry_id: str):
+async def delete_entry(entry_id: str, request: Request):
+    # Get Harvest token for deletion (optional - falls back to PAT)
+    harvest_token = request.session.get("harvest_token")
+    harvest_access_token = None
+    if harvest_token:
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            request.session["harvest_token"] = valid_token
+            harvest_access_token = valid_token["access_token"]
+
     # Check if entry has a Harvest ID before deleting
     entries = harvest_mock.get_entries()
     harvest_id = None
@@ -330,7 +709,7 @@ async def delete_entry(entry_id: str):
     if success:
         sheets_sync.delete_entry_from_sheet(entry_id)
         if harvest_id:
-            harvest_api.delete_time_entry(int(harvest_id))
+            harvest_api.delete_time_entry(int(harvest_id), harvest_access_token)
     return {"success": success}
 
 
@@ -350,6 +729,19 @@ async def approve_entry(entry_id: str, request: Request):
     if not user:
         return {"success": False, "error": "Not authenticated"}
 
+    # Get and validate Harvest token
+    harvest_token = request.session.get("harvest_token")
+    if not harvest_token:
+        # Fallback to PAT if no OAuth token (backward compatibility)
+        harvest_access_token = None
+    else:
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            request.session["harvest_token"] = valid_token
+            harvest_access_token = valid_token["access_token"]
+        else:
+            return {"success": False, "error": "Harvest token expired"}
+
     # Find the entry
     entries = harvest_mock.get_entries()
     entry = None
@@ -366,7 +758,7 @@ async def approve_entry(entry_id: str, request: Request):
 
     # Push to Harvest
     user_email = user.get("email", "")
-    harvest_user_id = harvest_api.resolve_user_id(user_email) if user_email else None
+    harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
     harvest_entry = harvest_api.push_entry(
         client_name=entry.get("client", ""),
         task_name=entry.get("project_name", entry.get("task", "")),
@@ -374,6 +766,7 @@ async def approve_entry(entry_id: str, request: Request):
         hours=float(entry.get("hours", 0)),
         notes=entry.get("notes", ""),
         user_id=harvest_user_id,
+        access_token=harvest_access_token,
     )
 
     if not harvest_entry:
@@ -460,7 +853,7 @@ async def suggest_from_calendar(request: Request):
     response = client.messages.create(
         model="claude-sonnet-4-5-20250929",
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(),
         messages=messages,
     )
 
@@ -529,7 +922,7 @@ async def suggest_from_drive(request: Request):
     response = client.messages.create(
         model="claude-sonnet-4-5-20250929",
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(),
         messages=messages,
     )
 
@@ -597,7 +990,7 @@ async def suggest_from_gmail(request: Request):
     response = client.messages.create(
         model="claude-sonnet-4-5-20250929",
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        system=build_system_prompt(),
         messages=messages,
     )
 
@@ -621,7 +1014,8 @@ async def get_me(request: Request):
     if not user:
         return {"authenticated": False}
     has_calendar = bool(request.session.get("google_token", {}).get("access_token"))
-    return {"authenticated": True, "has_calendar": has_calendar, **user}
+    has_harvest = bool(request.session.get("harvest_token", {}).get("access_token"))
+    return {"authenticated": True, "has_calendar": has_calendar, "has_harvest": has_harvest, **user}
 
 
 if __name__ == "__main__":

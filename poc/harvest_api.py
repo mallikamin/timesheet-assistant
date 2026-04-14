@@ -19,13 +19,24 @@ _user_cache_time = 0
 CACHE_TTL = 300  # 5 minutes
 
 
-def _headers() -> Dict[str, str]:
-    return {
-        "Harvest-Account-ID": os.getenv("HARVEST_ACCOUNT_ID", ""),
-        "Authorization": f"Bearer {os.getenv('HARVEST_ACCESS_TOKEN', '')}",
-        "User-Agent": "ThriveTimesheet",
-        "Content-Type": "application/json",
-    }
+def _headers(access_token: str = None) -> Dict[str, str]:
+    """Generate Harvest API headers. Uses OAuth token if provided, else falls back to PAT."""
+    if access_token:
+        # OAuth2 flow (per-user token)
+        return {
+            "Authorization": f"Bearer {access_token}",
+            "Harvest-Account-ID": os.getenv("HARVEST_ACCOUNT_ID", ""),
+            "User-Agent": "ThriveTimesheet",
+            "Content-Type": "application/json",
+        }
+    else:
+        # Fallback to PAT (backward compatibility)
+        return {
+            "Harvest-Account-ID": os.getenv("HARVEST_ACCOUNT_ID", ""),
+            "Authorization": f"Bearer {os.getenv('HARVEST_ACCESS_TOKEN', '')}",
+            "User-Agent": "ThriveTimesheet",
+            "Content-Type": "application/json",
+        }
 
 
 def is_configured() -> bool:
@@ -33,7 +44,7 @@ def is_configured() -> bool:
     return bool(os.getenv("HARVEST_ACCESS_TOKEN")) and bool(os.getenv("HARVEST_ACCOUNT_ID"))
 
 
-def get_users() -> List[Dict]:
+def get_users(access_token: str = None) -> List[Dict]:
     """Fetch all active users from Harvest. Cached."""
     global _user_cache, _user_cache_time
 
@@ -43,7 +54,7 @@ def get_users() -> List[Dict]:
     try:
         resp = httpx.get(
             f"{HARVEST_BASE}/users",
-            headers=_headers(),
+            headers=_headers(access_token),
             params={"is_active": "true"},
             timeout=10,
         )
@@ -57,18 +68,18 @@ def get_users() -> List[Dict]:
         return _user_cache or []
 
 
-def resolve_user_id(email: str) -> Optional[int]:
+def resolve_user_id(email: str, access_token: str = None) -> Optional[int]:
     """Map a Google login email to a Harvest user ID."""
     if not email:
         return None
-    users = get_users()
+    users = get_users(access_token)
     for u in users:
         if u.get("email", "").lower() == email.lower():
             return u["id"]
     return None
 
 
-def get_projects_with_tasks() -> List[Dict]:
+def get_projects_with_tasks(access_token: str = None) -> List[Dict]:
     """Fetch all active projects with their task assignments from Harvest.
     Returns list of: {project_id, project_name, client_name, tasks: [{task_id, task_name}]}
     """
@@ -80,7 +91,7 @@ def get_projects_with_tasks() -> List[Dict]:
     try:
         resp = httpx.get(
             f"{HARVEST_BASE}/projects",
-            headers=_headers(),
+            headers=_headers(access_token),
             params={"is_active": "true"},
             timeout=10,
         )
@@ -95,7 +106,7 @@ def get_projects_with_tasks() -> List[Dict]:
             # Get task assignments for this project
             ta_resp = httpx.get(
                 f"{HARVEST_BASE}/projects/{p['id']}/task_assignments",
-                headers=_headers(),
+                headers=_headers(access_token),
                 params={"is_active": "true"},
                 timeout=10,
             )
@@ -123,11 +134,11 @@ def get_projects_with_tasks() -> List[Dict]:
         return _project_cache or []
 
 
-def resolve_ids(project_name: str, task_name: str) -> Optional[Dict]:
+def resolve_ids(project_name: str, task_name: str, access_token: str = None) -> Optional[Dict]:
     """Resolve project/task names to Harvest IDs.
     Returns {project_id, task_id} or None if not found.
     """
-    projects = get_projects_with_tasks()
+    projects = get_projects_with_tasks(access_token)
 
     for p in projects:
         # Match project by name (case-insensitive)
@@ -158,11 +169,12 @@ def create_time_entry(
     hours: float,
     notes: str = "",
     user_id: int = None,
+    access_token: str = None,
 ) -> Optional[Dict]:
     """Create a time entry in Harvest.
     Returns the Harvest entry dict with id, or None on failure.
     """
-    if not is_configured():
+    if not is_configured() and not access_token:
         return None
 
     try:
@@ -177,7 +189,7 @@ def create_time_entry(
             payload["user_id"] = user_id
         resp = httpx.post(
             f"{HARVEST_BASE}/time_entries",
-            headers=_headers(),
+            headers=_headers(access_token),
             json=payload,
             timeout=10,
         )
@@ -193,15 +205,15 @@ def create_time_entry(
         return None
 
 
-def delete_time_entry(harvest_id: int) -> bool:
+def delete_time_entry(harvest_id: int, access_token: str = None) -> bool:
     """Delete a time entry from Harvest."""
-    if not is_configured():
+    if not is_configured() and not access_token:
         return False
 
     try:
         resp = httpx.delete(
             f"{HARVEST_BASE}/time_entries/{harvest_id}",
-            headers=_headers(),
+            headers=_headers(access_token),
             timeout=10,
         )
         return resp.status_code == 200
@@ -210,9 +222,9 @@ def delete_time_entry(harvest_id: int) -> bool:
         return False
 
 
-def get_time_entries(spent_date: str = None, user_id: int = None) -> List[Dict]:
+def get_time_entries(spent_date: str = None, user_id: int = None, access_token: str = None) -> List[Dict]:
     """Get time entries from Harvest, optionally filtered."""
-    if not is_configured():
+    if not is_configured() and not access_token:
         return []
 
     try:
@@ -225,7 +237,7 @@ def get_time_entries(spent_date: str = None, user_id: int = None) -> List[Dict]:
 
         resp = httpx.get(
             f"{HARVEST_BASE}/time_entries",
-            headers=_headers(),
+            headers=_headers(access_token),
             params=params,
             timeout=10,
         )
@@ -237,19 +249,19 @@ def get_time_entries(spent_date: str = None, user_id: int = None) -> List[Dict]:
         return []
 
 
-def reassign_time_entry(harvest_id: int, new_user_id: int) -> Optional[Dict]:
+def reassign_time_entry(harvest_id: int, new_user_id: int, access_token: str = None) -> Optional[Dict]:
     """Reassign a time entry to a different user.
     Harvest doesn't allow PATCH on user_id, so we delete + recreate.
     Returns the new entry dict or None on failure.
     """
-    if not is_configured():
+    if not is_configured() and not access_token:
         return None
 
     try:
         # Get the existing entry
         resp = httpx.get(
             f"{HARVEST_BASE}/time_entries/{harvest_id}",
-            headers=_headers(),
+            headers=_headers(access_token),
             timeout=10,
         )
         if resp.status_code != 200:
@@ -259,7 +271,7 @@ def reassign_time_entry(harvest_id: int, new_user_id: int) -> Optional[Dict]:
         old = resp.json()
 
         # Delete the old entry
-        if not delete_time_entry(harvest_id):
+        if not delete_time_entry(harvest_id, access_token):
             print(f"Harvest: could not delete entry {harvest_id}")
             return None
 
@@ -271,6 +283,7 @@ def reassign_time_entry(harvest_id: int, new_user_id: int) -> Optional[Dict]:
             hours=old["hours"],
             notes=old.get("notes", ""),
             user_id=new_user_id,
+            access_token=access_token,
         )
         if new_entry:
             print(f"Harvest: reassigned entry {harvest_id} -> {new_entry['id']} for user {new_user_id}")
@@ -280,14 +293,14 @@ def reassign_time_entry(harvest_id: int, new_user_id: int) -> Optional[Dict]:
         return None
 
 
-def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, notes: str = "", user_id: int = None) -> Optional[Dict]:
+def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, notes: str = "", user_id: int = None, access_token: str = None) -> Optional[Dict]:
     """High-level: resolve names to IDs and create a Harvest time entry.
     This is the main function called by the app.
     """
-    if not is_configured():
+    if not is_configured() and not access_token:
         return None
 
-    ids = resolve_ids(client_name, task_name)
+    ids = resolve_ids(client_name, task_name, access_token)
     if not ids:
         print(f"Harvest: could not resolve '{client_name}' / '{task_name}'")
         return None
@@ -299,4 +312,5 @@ def push_entry(client_name: str, task_name: str, spent_date: str, hours: float, 
         hours=hours,
         notes=notes,
         user_id=user_id,
+        access_token=access_token,
     )
