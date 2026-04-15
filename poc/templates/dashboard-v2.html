@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thrive Task Management - Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Figtree', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #F6F7FB;
+            color: #323338;
+        }
+
+        .header {
+            background: white;
+            border-bottom: 1px solid #E6E9EF;
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #F4A623 0%, #6B4C9A 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #323338;
+            margin-left: 20px;
+        }
+
+        .user-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #F4A623 0%, #6B4C9A 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .ai-prompt {
+            background: linear-gradient(135deg, #FFF8E1 0%, #FFF0D4 100%);
+            border-left: 4px solid #F4A623;
+            padding: 12px 16px;
+            margin: 16px 32px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .ai-prompt.show {
+            display: block;
+        }
+
+        .ai-prompt-text {
+            display: inline-block;
+            color: #323338;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .main-container {
+            padding: 24px 32px;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: #323338;
+            margin-bottom: 24px;
+        }
+
+        .view-tabs {
+            display: flex;
+            gap: 8px;
+            border-bottom: 2px solid #E6E9EF;
+            margin-bottom: 24px;
+        }
+
+        .tab {
+            padding: 12px 16px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #676879;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab.active {
+            color: #F4A623;
+            border-bottom-color: #F4A623;
+        }
+
+        .view-content {
+            display: none;
+        }
+
+        .view-content.active {
+            display: block;
+        }
+
+        /* TABLE VIEW ENHANCED */
+        .table-view {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .table-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .search-box {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #E6E9EF;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .new-task-btn {
+            padding: 8px 12px;
+            background: linear-gradient(135deg, #F4A623 0%, #6B4C9A 100%);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .tasks-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .tasks-table thead {
+            background: #F6F7FB;
+            border-bottom: 1px solid #E6E9EF;
+        }
+
+        .tasks-table th {
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #676879;
+            text-transform: uppercase;
+        }
+
+        .tasks-table td {
+            padding: 12px;
+            border-bottom: 1px solid #E6E9EF;
+            font-size: 14px;
+        }
+
+        .task-row {
+            border-left: 3px solid transparent;
+        }
+
+        .task-row.status-todo {
+            border-left-color: #C4C4C4;
+        }
+
+        .task-row.status-working {
+            border-left-color: #FDAB3D;
+        }
+
+        .task-row.status-review {
+            border-left-color: #0086FF;
+        }
+
+        .task-row.status-done {
+            border-left-color: #00C875;
+        }
+
+        .task-row:hover {
+            background: #F6F7FB;
+        }
+
+        .task-title {
+            font-weight: 600;
+            color: #323338;
+            cursor: pointer;
+        }
+
+        .task-title:hover {
+            color: #F4A623;
+        }
+
+        .subtask-row {
+            background: #FAFBFC;
+        }
+
+        .subtask-title {
+            padding-left: 40px;
+            font-size: 13px;
+            color: #676879;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+
+        .status-todo {
+            background: #C4C4C4;
+        }
+
+        .status-working {
+            background: #FDAB3D;
+        }
+
+        .status-review {
+            background: #0086FF;
+        }
+
+        .status-done {
+            background: #00C875;
+        }
+
+        .priority-high {
+            color: #E2445C;
+            font-weight: 600;
+        }
+
+        .priority-medium {
+            color: #FDAB3D;
+            font-weight: 600;
+        }
+
+        .priority-low {
+            color: #00C875;
+            font-weight: 600;
+        }
+
+        .assignee-avatars {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .assignee-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #F4A623 0%, #6B4C9A 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 9px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .assignee-avatar:hover {
+            transform: scale(1.1);
+        }
+
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #676879;
+            padding: 4px;
+        }
+
+        .action-btn:hover {
+            color: #F4A623;
+        }
+
+        /* MODALS */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 700;
+            color: #323338;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-close {
+            cursor: pointer;
+            font-size: 24px;
+            color: #C4C4C4;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #676879;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        .form-input, textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #E6E9EF;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Figtree', sans-serif;
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-input:focus, textarea:focus {
+            outline: none;
+            border-color: #F4A623;
+        }
+
+        .attachment-item {
+            background: #F6F7FB;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 6px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .attachment-link {
+            color: #0086FF;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .attachment-link:hover {
+            text-decoration: underline;
+        }
+
+        .remove-btn {
+            cursor: pointer;
+            color: #E2445C;
+            font-weight: 600;
+        }
+
+        .subtask-list {
+            margin-top: 12px;
+        }
+
+        .subtask-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: #F6F7FB;
+            border-radius: 4px;
+            margin-bottom: 6px;
+        }
+
+        .subtask-checkbox {
+            cursor: pointer;
+        }
+
+        .subtask-text {
+            flex: 1;
+            font-size: 13px;
+            color: #323338;
+        }
+
+        .subtask-text.done {
+            text-decoration: line-through;
+            color: #C4C4C4;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #F4A623 0%, #6B4C9A 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #E6E9EF;
+            color: #323338;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+
+        /* KANBAN */
+        .kanban-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .kanban-column {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+
+        .kanban-header {
+            font-weight: 600;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid;
+        }
+
+        .kanban-column.todo .kanban-header {
+            border-bottom-color: #C4C4C4;
+        }
+
+        .kanban-column.working .kanban-header {
+            border-bottom-color: #FDAB3D;
+        }
+
+        .kanban-column.review .kanban-header {
+            border-bottom-color: #0086FF;
+        }
+
+        .kanban-column.done .kanban-header {
+            border-bottom-color: #00C875;
+        }
+
+        .kanban-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .kanban-card {
+            background: white;
+            border: 1px solid #E6E9EF;
+            border-radius: 6px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .kanban-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        .kanban-card-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        .kanban-card-meta {
+            font-size: 12px;
+            color: #676879;
+            margin-top: 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #C4C4C4;
+        }
+
+        @media (max-width: 1200px) {
+            .kanban-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .kanban-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tasks-table {
+                font-size: 12px;
+            }
+
+            .tasks-table th, .tasks-table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div style="display: flex; align-items: center;">
+            <div class="logo">THRIVE</div>
+            <div class="header-title">Task Management</div>
+        </div>
+        <div class="user-section">
+            <div class="user-avatar">MA</div>
+        </div>
+    </div>
+
+    <div class="ai-prompt" id="ai-prompt">
+        <span class="ai-prompt-text" id="ai-prompt-text"></span>
+        <span style="float: right; cursor: pointer; color: #676879;" onclick="document.getElementById('ai-prompt').classList.remove('show')">✕</span>
+    </div>
+
+    <div class="main-container">
+        <h1 class="page-title">Afterpay AUNZ Campaign</h1>
+
+        <div class="view-tabs">
+            <button class="tab active" onclick="switchView('table')">📋 Table</button>
+            <button class="tab" onclick="switchView('kanban')">🎯 Kanban</button>
+            <button class="tab" onclick="switchView('timeline')">📅 Timeline</button>
+            <button class="tab" onclick="switchView('calendar')">🗓️ Calendar</button>
+            <button class="tab" onclick="switchView('notifications')">🔔 Notifications</button>
+        </div>
+
+        <!-- TABLE VIEW -->
+        <div id="table-view" class="view-content active">
+            <div class="table-view">
+                <div class="table-controls">
+                    <input type="text" class="search-box" placeholder="Search tasks..." id="search-input" onkeyup="filterTasks()">
+                    <button class="new-task-btn" onclick="openNewTaskModal()">+ New Task</button>
+                </div>
+                <table class="tasks-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 3%;">✓</th>
+                            <th style="width: 25%;">Task</th>
+                            <th style="width: 15%;">Owners</th>
+                            <th style="width: 10%;">Status</th>
+                            <th style="width: 10%;">Priority</th>
+                            <th style="width: 12%;">Due Date</th>
+                            <th style="width: 8%;">Budget</th>
+                            <th style="width: 10%;">Notes</th>
+                            <th style="width: 7%;">Files</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tasks-tbody">
+                        <!-- Tasks will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- KANBAN VIEW -->
+        <div id="kanban-view" class="view-content">
+            <div class="kanban-grid" id="kanban-grid">
+                <!-- Kanban will be populated here -->
+            </div>
+        </div>
+
+        <!-- TIMELINE VIEW -->
+        <div id="timeline-view" class="view-content">
+            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
+                Timeline view coming soon...
+            </div>
+        </div>
+
+        <!-- CALENDAR VIEW -->
+        <div id="calendar-view" class="view-content">
+            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
+                Calendar view coming soon...
+            </div>
+        </div>
+
+        <!-- NOTIFICATIONS VIEW -->
+        <div id="notifications-view" class="view-content">
+            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
+                Notifications coming soon...
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW TASK MODAL -->
+    <div class="modal" id="new-task-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Create New Task</span>
+                <span class="modal-close" onclick="closeModal('new-task-modal')">✕</span>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Task Title</label>
+                <input type="text" class="form-input" id="task-title">
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Project</label>
+                    <select class="form-input" id="task-project">
+                        <option>Afterpay AUNZ Campaign</option>
+                        <option>AGL Campaign Q2</option>
+                        <option>Acuity Operations FY26</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Priority</label>
+                    <select class="form-input" id="task-priority">
+                        <option>High</option>
+                        <option>Medium</option>
+                        <option>Low</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Due Date</label>
+                <input type="date" class="form-input" id="task-due-date">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Budget (USD)</label>
+                <input type="number" class="form-input" id="task-budget" placeholder="0.00">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-input" id="task-notes" placeholder="Add notes..."></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('new-task-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveNewTask()">Create Task</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TASK DETAIL MODAL -->
+    <div class="modal" id="task-detail-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span id="modal-task-title">Task Title</span>
+                <span class="modal-close" onclick="closeModal('task-detail-modal')">✕</span>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Owners</label>
+                <div class="assignee-avatars" id="modal-assignees"></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-input" id="modal-status">
+                        <option>To Do</option>
+                        <option>Working</option>
+                        <option>Review</option>
+                        <option>Done</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Priority</label>
+                    <select class="form-input" id="modal-priority">
+                        <option>High</option>
+                        <option>Medium</option>
+                        <option>Low</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Due Date</label>
+                <input type="date" class="form-input" id="modal-due-date">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Notes</label>
+                <textarea class="form-input" id="modal-notes" placeholder="Add notes..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">📎 Attachments</label>
+                <div id="modal-attachments"></div>
+                <input type="text" class="form-input" id="new-attachment-url" placeholder="Paste file URL...">
+                <button class="btn btn-secondary" style="margin-top: 8px; width: 100%;" onclick="addAttachment()">Add Attachment</button>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">✓ Subtasks</label>
+                <div id="modal-subtasks" class="subtask-list"></div>
+                <input type="text" class="form-input" id="new-subtask" placeholder="Add subtask...">
+                <button class="btn btn-secondary" style="margin-top: 8px; width: 100%;" onclick="addSubtask()">Add Subtask</button>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal('task-detail-modal')">Close</button>
+                <button class="btn btn-primary" onclick="saveTaskChanges()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sampleTasks = [
+            { id: "1", title: "Review Q2 strategy deck", project: "Afterpay AUNZ Campaign", assignees: ["Tariq Munir"], status: "To Do", priority: "High", due_date: "2026-04-17", budget: 2400, hours_logged: 0, notes: "Need CFO sign-off before distribution", attachments: [{name: "Q2_Strategy.pdf", url: "#"}], subtasks: [{title: "Review financials section", done: false}, {title: "Approve messaging", done: false}], description: "Review and approve Q2 strategic direction" },
+            { id: "2", title: "Update creative briefs", project: "Afterpay AUNZ Campaign", assignees: ["Lauren Pallotta", "Hugh"], status: "To Do", priority: "High", due_date: "2026-04-19", budget: 1800, hours_logged: 0, notes: "Coordinate with design team before finalizing", attachments: [], subtasks: [{title: "Update tone of voice", done: false}, {title: "Create design specs", done: true}], description: "Refresh creative direction and brief designers" },
+            { id: "3", title: "Client presentation deck", project: "Afterpay AUNZ Campaign", assignees: ["Shivasha Dalpatadu", "Tariq Munir"], status: "Working", priority: "High", due_date: "2026-04-16", budget: 3200, hours_logged: 4.5, notes: "Client meeting scheduled for Tuesday", attachments: [{name: "Draft_Presentation.pptx", url: "#"}, {name: "Brand_Assets.zip", url: "#"}], subtasks: [{title: "Add case studies", done: true}, {title: "Finalize numbers", done: false}], description: "Prepare and finalize presentation for Afterpay stakeholders" },
+            { id: "4", title: "Social media assets", project: "AGL Campaign Q2", assignees: ["Hugh", "Miles"], status: "Working", priority: "Medium", due_date: "2026-04-18", budget: 2600, hours_logged: 2, notes: "Use new brand colors", attachments: [], subtasks: [{title: "Instagram post designs", done: false}], description: "Design and finalize social media creative for AGL campaign" },
+            { id: "5", title: "Campaign performance report", project: "AGL Campaign Q2", assignees: ["Miles"], status: "Working", priority: "Medium", due_date: "2026-04-21", budget: 1500, hours_logged: 1.5, notes: "Include ROI calculations", attachments: [{name: "Weekly_Metrics.xlsx", url: "#"}], subtasks: [], description: "Compile weekly performance metrics and analysis" },
+            { id: "6", title: "Email campaign templates", project: "Acuity Operations FY26", assignees: ["Michael", "Lauren Pallotta"], status: "Review", priority: "Medium", due_date: "2026-04-15", budget: 2200, hours_logged: 6, notes: "Test across Outlook, Gmail, Apple Mail", attachments: [], subtasks: [{title: "Mobile responsive design", done: true}, {title: "Dark mode support", done: false}], description: "Design responsive email templates for Q2 campaigns" },
+            { id: "7", title: "Website copy updates", project: "Acuity Operations FY26", assignees: ["Lauren Pallotta"], status: "Review", priority: "Low", due_date: "2026-04-22", budget: 1600, hours_logged: 3, notes: "SEO review needed", attachments: [], subtasks: [], description: "Update homepage and service page copy" },
+            { id: "8", title: "Brand guidelines refresh", project: "Afterpay AUNZ Campaign", assignees: ["Tariq Munir", "Hugh"], status: "Done", priority: "Medium", due_date: "2026-04-12", budget: 3500, hours_logged: 8.5, notes: "Approved by CFO on Apr 12", attachments: [{name: "Brand_Guidelines_Final.pdf", url: "#"}], subtasks: [{title: "Logo usage guide", done: true}], description: "Completed brand style guide update" },
+        ];
+
+        let allTasks = [...sampleTasks];
+        let currentTask = null;
+
+        function initDashboard() {
+            renderTableView();
+            renderKanbanView();
+            checkAISyncPrompt();
+        }
+
+        function switchView(viewName) {
+            document.querySelectorAll('.view-content').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(viewName + '-view').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function renderTableView() {
+            const tbody = document.getElementById('tasks-tbody');
+            let html = '';
+
+            allTasks.forEach(task => {
+                const statusClass = task.status.toLowerCase().replace(' ', '-');
+                html += `
+                    <tr class="task-row status-${statusClass}">
+                        <td><input type="checkbox"></td>
+                        <td><span class="task-title" onclick="openTaskDetail('${task.id}')">${task.title}</span></td>
+                        <td>
+                            <div class="assignee-avatars">
+                                ${task.assignees.map(a => `<div class="assignee-avatar" title="${a}">${a.split(' ').map(n => n[0]).join('')}</div>`).join('')}
+                            </div>
+                        </td>
+                        <td><span class="status-badge status-${statusClass}">${task.status}</span></td>
+                        <td><span class="priority-${task.priority.toLowerCase()}">${task.priority}</span></td>
+                        <td>${task.due_date}</td>
+                        <td>$${task.budget}</td>
+                        <td><button class="action-btn" onclick="openTaskDetail('${task.id}')">📝</button></td>
+                        <td><button class="action-btn" onclick="openTaskDetail('${task.id}')">${task.attachments.length > 0 ? '📎' : '-'}</button></td>
+                    </tr>
+                `;
+
+                // Add subtasks
+                if (task.subtasks && task.subtasks.length > 0) {
+                    task.subtasks.forEach(st => {
+                        html += `
+                            <tr class="subtask-row">
+                                <td><input type="checkbox" ${st.done ? 'checked' : ''}></td>
+                                <td colspan="8"><span class="subtask-title ${st.done ? 'done' : ''}">${st.title}</span></td>
+                            </tr>
+                        `;
+                    });
+                }
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        function renderKanbanView() {
+            const statuses = ['To Do', 'Working', 'Review', 'Done'];
+            const kanban = document.getElementById('kanban-grid');
+
+            kanban.innerHTML = statuses.map(status => {
+                const tasks = allTasks.filter(t => t.status === status);
+                return `
+                    <div class="kanban-column ${status.toLowerCase().replace(' ', '')}">
+                        <div class="kanban-header">${status} (${tasks.length})</div>
+                        <div class="kanban-cards">
+                            ${tasks.map(task => `
+                                <div class="kanban-card" onclick="openTaskDetail('${task.id}')">
+                                    <div class="kanban-card-title">${task.title}</div>
+                                    <div class="kanban-card-meta">
+                                        <div>💰 $${task.budget} | 📅 ${task.due_date}</div>
+                                        <div style="margin-top: 4px;">
+                                            ${task.assignees.map(a => `<span style="font-size: 11px; background: #E6E9EF; padding: 2px 6px; border-radius: 3px; display: inline-block; margin-right: 4px;">${a}</span>`).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${tasks.length === 0 ? '<div class="empty-state">No tasks yet</div>' : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openTaskDetail(taskId) {
+            currentTask = allTasks.find(t => t.id === taskId);
+            if (!currentTask) return;
+
+            document.getElementById('modal-task-title').textContent = currentTask.title;
+            document.getElementById('modal-status').value = currentTask.status;
+            document.getElementById('modal-priority').value = currentTask.priority;
+            document.getElementById('modal-due-date').value = currentTask.due_date;
+            document.getElementById('modal-notes').value = currentTask.notes;
+
+            document.getElementById('modal-assignees').innerHTML = currentTask.assignees.map(a =>
+                `<div class="assignee-avatar" title="${a}">${a.split(' ').map(n => n[0]).join('')}</div>`
+            ).join('');
+
+            document.getElementById('modal-attachments').innerHTML = currentTask.attachments.map((att, i) =>
+                `<div class="attachment-item"><a href="${att.url}" class="attachment-link" target="_blank">📎 ${att.name}</a> <span class="remove-btn" onclick="removeAttachment(${i})">✕</span></div>`
+            ).join('');
+
+            document.getElementById('modal-subtasks').innerHTML = currentTask.subtasks.map((st, i) =>
+                `<div class="subtask-item">
+                    <input type="checkbox" class="subtask-checkbox" ${st.done ? 'checked' : ''} onchange="toggleSubtask(${i})">
+                    <span class="subtask-text ${st.done ? 'done' : ''}">${st.title}</span>
+                    <span class="remove-btn" onclick="removeSubtask(${i})">✕</span>
+                </div>`
+            ).join('');
+
+            document.getElementById('task-detail-modal').classList.add('show');
+        }
+
+        function openNewTaskModal() {
+            document.getElementById('new-task-modal').classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        function saveNewTask() {
+            const title = document.getElementById('task-title').value.trim();
+            if (!title) {
+                alert('Please enter a task title');
+                return;
+            }
+
+            const newTask = {
+                id: String(allTasks.length + 1),
+                title,
+                project: document.getElementById('task-project').value,
+                assignees: [],
+                status: 'To Do',
+                priority: document.getElementById('task-priority').value,
+                due_date: document.getElementById('task-due-date').value,
+                budget: parseFloat(document.getElementById('task-budget').value) || 0,
+                hours_logged: 0,
+                notes: document.getElementById('task-notes').value,
+                attachments: [],
+                subtasks: [],
+                description: ''
+            };
+
+            allTasks.push(newTask);
+            renderTableView();
+            renderKanbanView();
+            closeModal('new-task-modal');
+            document.getElementById('task-title').value = '';
+            document.getElementById('task-notes').value = '';
+            alert('✅ Task created!');
+        }
+
+        function saveTaskChanges() {
+            if (!currentTask) return;
+            currentTask.status = document.getElementById('modal-status').value;
+            currentTask.priority = document.getElementById('modal-priority').value;
+            currentTask.due_date = document.getElementById('modal-due-date').value;
+            currentTask.notes = document.getElementById('modal-notes').value;
+            renderTableView();
+            renderKanbanView();
+            closeModal('task-detail-modal');
+            alert('✅ Task updated!');
+        }
+
+        function addAttachment() {
+            const url = document.getElementById('new-attachment-url').value.trim();
+            if (!url) return;
+            const name = url.split('/').pop();
+            if (!currentTask.attachments) currentTask.attachments = [];
+            currentTask.attachments.push({name, url});
+            document.getElementById('new-attachment-url').value = '';
+            openTaskDetail(currentTask.id);
+        }
+
+        function removeAttachment(index) {
+            if (currentTask.attachments) currentTask.attachments.splice(index, 1);
+            openTaskDetail(currentTask.id);
+        }
+
+        function addSubtask() {
+            const title = document.getElementById('new-subtask').value.trim();
+            if (!title) return;
+            if (!currentTask.subtasks) currentTask.subtasks = [];
+            currentTask.subtasks.push({title, done: false});
+            document.getElementById('new-subtask').value = '';
+            openTaskDetail(currentTask.id);
+        }
+
+        function toggleSubtask(index) {
+            if (currentTask.subtasks) currentTask.subtasks[index].done = !currentTask.subtasks[index].done;
+            openTaskDetail(currentTask.id);
+        }
+
+        function removeSubtask(index) {
+            if (currentTask.subtasks) currentTask.subtasks.splice(index, 1);
+            openTaskDetail(currentTask.id);
+        }
+
+        function filterTasks() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            // Filter logic here
+        }
+
+        function checkAISyncPrompt() {
+            const unstarted = allTasks.filter(t => t.status === 'To Do' && new Date(t.due_date) < new Date(Date.now() + 3 * 24 * 60 * 60 * 1000));
+            if (unstarted.length > 0) {
+                const task = unstarted[0];
+                document.getElementById('ai-prompt-text').textContent = `🤖 You were assigned '${task.title}' by ${task.due_date}, but no progress yet. Have you started?`;
+                document.getElementById('ai-prompt').classList.add('show');
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+</body>
+</html>

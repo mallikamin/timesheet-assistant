@@ -1024,11 +1024,13 @@ async def get_me(request: Request):
 
 @app.get("/dashboard")
 async def dashboard(request: Request):
-    """Task Management Dashboard with 5 views (Table, Kanban, Timeline, Calendar, Notifications)."""
+    """Task Management Dashboard with 5 views (Table, Kanban, Timeline, Calendar, Notifications).
+    Enhanced with: Multiple assignees, attachments, notes, subtasks, lean Monday.com UX.
+    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login")
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+    return templates.TemplateResponse("dashboard-v2.html", {"request": request, "user": user})
 
 
 # Include tasks API routes

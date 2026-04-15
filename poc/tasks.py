@@ -29,27 +29,33 @@ def _get_client():
 def create_task(
     title: str,
     project: str,
-    assignee: str,
+    assignees: list = None,  # Multiple assignees now
     status: str = "To Do",
     priority: str = "Medium",
     due_date: str = None,
     budget: float = 0.0,
     description: str = "",
+    notes: str = "",
+    attachments: list = None,  # [{"name": "file.pdf", "url": "https://..."}, ...]
+    subtasks: list = None,  # [{"title": "Subtask 1", "done": False}, ...]
+    parent_task_id: str = None,  # For subtasks
     created_by: str = "System",
-    owner: str = None,
 ) -> Dict:
     """Create a new task."""
     task = {
         "id": str(uuid.uuid4())[:8],
         "title": title,
         "project": project,
-        "assignee": assignee,
-        "owner": owner or assignee,  # owner = assignee by default
+        "assignees": assignees or [],  # List of assignee names
         "status": status,
         "priority": priority,
         "due_date": due_date or date.today().isoformat(),
         "budget": budget,
         "description": description,
+        "notes": notes,
+        "attachments": attachments or [],
+        "subtasks": subtasks or [],
+        "parent_task_id": parent_task_id,
         "created_by": created_by,
         "created_at": datetime.now().isoformat(),
         "hours_logged": 0.0,
@@ -213,90 +219,129 @@ def seed_tasks():
         {
             "title": "Review Q2 strategy deck",
             "project": "Afterpay AUNZ Campaign",
-            "assignee": "Tariq Munir",
+            "assignees": ["Tariq Munir"],
             "status": "To Do",
             "priority": "High",
             "due_date": (date.today() + timedelta(days=3)).isoformat(),
             "budget": 2400.0,
             "description": "Review and approve Q2 strategic direction",
+            "notes": "Need CFO sign-off before distribution",
+            "attachments": [{"name": "Q2_Strategy.pdf", "url": "https://example.com/Q2_Strategy.pdf"}],
+            "subtasks": [
+                {"title": "Review financials section", "done": False},
+                {"title": "Approve messaging", "done": False},
+            ],
         },
         {
             "title": "Update creative briefs",
             "project": "Afterpay AUNZ Campaign",
-            "assignee": "Lauren Pallotta",
+            "assignees": ["Lauren Pallotta", "Hugh"],
             "status": "To Do",
             "priority": "High",
             "due_date": (date.today() + timedelta(days=5)).isoformat(),
             "budget": 1800.0,
             "description": "Refresh creative direction and brief designers",
+            "notes": "Coordinate with design team before finalizing",
+            "attachments": [],
+            "subtasks": [
+                {"title": "Update tone of voice", "done": False},
+                {"title": "Create design specs", "done": True},
+            ],
         },
         {
             "title": "Client presentation deck",
             "project": "Afterpay AUNZ Campaign",
-            "assignee": "Shivasha Dalpatadu",
+            "assignees": ["Shivasha Dalpatadu", "Tariq Munir"],
             "status": "Working",
             "priority": "High",
             "due_date": (date.today() + timedelta(days=2)).isoformat(),
             "budget": 3200.0,
             "description": "Prepare and finalize presentation for Afterpay stakeholders",
+            "notes": "Client meeting scheduled for Tuesday",
+            "attachments": [
+                {"name": "Draft_Presentation.pptx", "url": "https://example.com/Draft_Presentation.pptx"},
+                {"name": "Brand_Assets.zip", "url": "https://example.com/Brand_Assets.zip"},
+            ],
+            "subtasks": [
+                {"title": "Add case studies", "done": True},
+                {"title": "Finalize numbers", "done": False},
+                {"title": "Get legal review", "done": False},
+            ],
         },
         {
             "title": "Social media assets",
             "project": "AGL Campaign Q2",
-            "assignee": "Hugh",
+            "assignees": ["Hugh", "Miles"],
             "status": "Working",
             "priority": "Medium",
             "due_date": (date.today() + timedelta(days=4)).isoformat(),
             "budget": 2600.0,
             "description": "Design and finalize social media creative for AGL campaign",
+            "notes": "Use new brand colors",
+            "attachments": [],
+            "subtasks": [{"title": "Instagram post designs", "done": False}],
         },
         {
             "title": "Campaign performance report",
             "project": "AGL Campaign Q2",
-            "assignee": "Miles",
+            "assignees": ["Miles"],
             "status": "Working",
             "priority": "Medium",
             "due_date": (date.today() + timedelta(days=6)).isoformat(),
             "budget": 1500.0,
             "description": "Compile weekly performance metrics and analysis",
+            "notes": "Include ROI calculations",
+            "attachments": [{"name": "Weekly_Metrics.xlsx", "url": "https://example.com/Weekly_Metrics.xlsx"}],
+            "subtasks": [],
         },
         {
             "title": "Email campaign templates",
             "project": "Acuity Operations FY26",
-            "assignee": "Michael",
+            "assignees": ["Michael", "Lauren Pallotta"],
             "status": "Review",
             "priority": "Medium",
             "due_date": (date.today() + timedelta(days=1)).isoformat(),
             "budget": 2200.0,
             "description": "Design responsive email templates for Q2 campaigns",
+            "notes": "Test across Outlook, Gmail, Apple Mail",
+            "attachments": [],
+            "subtasks": [
+                {"title": "Mobile responsive design", "done": True},
+                {"title": "Dark mode support", "done": False},
+            ],
         },
         {
             "title": "Website copy updates",
             "project": "Acuity Operations FY26",
-            "assignee": "Lauren Pallotta",
+            "assignees": ["Lauren Pallotta"],
             "status": "Review",
             "priority": "Low",
             "due_date": (date.today() + timedelta(days=7)).isoformat(),
             "budget": 1600.0,
             "description": "Update homepage and service page copy",
+            "notes": "SEO review needed",
+            "attachments": [],
+            "subtasks": [],
         },
         {
             "title": "Brand guidelines refresh",
             "project": "Afterpay AUNZ Campaign",
-            "assignee": "Tariq Munir",
+            "assignees": ["Tariq Munir", "Hugh"],
             "status": "Done",
             "priority": "Medium",
             "due_date": (date.today() - timedelta(days=3)).isoformat(),
             "budget": 3500.0,
             "description": "Completed brand style guide update",
-            "hours_logged": 8.5,
+            "notes": "Approved by CFO on Apr 12",
+            "attachments": [{"name": "Brand_Guidelines_Final.pdf", "url": "https://example.com/Brand_Guidelines_Final.pdf"}],
+            "subtasks": [{"title": "Logo usage guide", "done": True}],
         },
     ]
 
     for task_data in tasks_data:
         create_task(**task_data)
 
-    print(f"✅ Seeded {len(tasks_data)} demo tasks")
+    print(f"✅ Seeded {len(tasks_data)} demo tasks with attachments, notes, subtasks, and multiple assignees")
 
 
 if __name__ == "__main__":
