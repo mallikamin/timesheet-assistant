@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timesheet Assistant — Chrome Extension Roadmap</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a2e; line-height: 1.6; background: #f8f9fa; }
+  .page { max-width: 900px; margin: 0 auto; background: white; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%); color: white; padding: 50px 60px 40px; }
+  .header-badge { display: inline-block; background: rgba(255,255,255,0.15); padding: 4px 14px; border-radius: 20px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 16px; }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .header-meta { display: flex; gap: 30px; margin-top: 20px; font-size: 13px; opacity: 0.7; }
+
+  /* Content */
+  .content { padding: 40px 60px; }
+  h2 { font-size: 20px; color: #0f172a; margin: 35px 0 15px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+  h2:first-child { margin-top: 0; }
+  h3 { font-size: 16px; color: #334155; margin: 20px 0 10px; }
+  p { margin-bottom: 12px; font-size: 14px; color: #374151; }
+  ul, ol { margin: 8px 0 16px 24px; font-size: 14px; color: #374151; }
+  li { margin-bottom: 6px; }
+  strong { color: #0f172a; }
+
+  /* Callout boxes */
+  .callout { background: #f0f9ff; border-left: 4px solid #0284c7; padding: 16px 20px; margin: 16px 0; border-radius: 0 8px 8px 0; font-size: 14px; }
+  .callout-warn { background: #fefce8; border-left-color: #ca8a04; }
+  .callout-green { background: #f0fdf4; border-left-color: #16a34a; }
+  .callout strong { display: block; margin-bottom: 4px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th { background: #f1f5f9; text-align: left; padding: 10px 14px; font-weight: 600; color: #334155; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #374151; vertical-align: top; }
+  tr:hover td { background: #fafbfc; }
+
+  /* Architecture diagram */
+  .diagram { background: #fafbfc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 20px 0; font-family: 'Consolas', 'Monaco', monospace; font-size: 12.5px; line-height: 1.5; white-space: pre; overflow-x: auto; color: #334155; }
+
+  /* Timeline */
+  .timeline { position: relative; margin: 20px 0; }
+  .timeline-item { display: flex; margin-bottom: 0; }
+  .timeline-left { width: 120px; text-align: right; padding-right: 20px; font-size: 13px; font-weight: 600; color: #64748b; padding-top: 12px; flex-shrink: 0; }
+  .timeline-bar { width: 3px; background: #e2e8f0; position: relative; flex-shrink: 0; }
+  .timeline-bar::before { content: ''; position: absolute; top: 16px; left: -5px; width: 13px; height: 13px; border-radius: 50%; background: #0284c7; border: 3px solid white; box-shadow: 0 0 0 2px #0284c7; }
+  .timeline-right { padding: 8px 0 24px 20px; flex: 1; }
+  .timeline-right h4 { font-size: 14px; color: #0f172a; margin-bottom: 4px; }
+  .timeline-right p { font-size: 13px; color: #64748b; margin: 0; }
+
+  /* Pricing cards */
+  .pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; max-width: 550px; }
+  .pricing-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; text-align: center; }
+  .pricing-card.highlight { border-color: #0284c7; background: #f0f9ff; }
+  .pricing-card h4 { font-size: 14px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pricing-card .price { font-size: 28px; font-weight: 700; color: #0f172a; }
+  .pricing-card .price span { font-size: 14px; font-weight: 400; color: #64748b; }
+  .pricing-card .desc { font-size: 12px; color: #64748b; margin-top: 8px; }
+  .pricing-card ul { text-align: left; margin: 12px 0 0 16px; font-size: 12px; }
+  .pricing-card li { margin-bottom: 4px; }
+
+  /* Footer */
+  .footer { background: #f8fafc; padding: 30px 60px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8; }
+
+  @media print {
+    body { background: white; }
+    .page { max-width: 100%; }
+    .header { padding: 30px 40px 25px; }
+    .content { padding: 25px 40px; }
+    h2 { break-after: avoid; }
+    .timeline-item { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="header">
+  <div class="header-badge">Phase 2 Roadmap</div>
+  <h1>Chrome Extension</h1>
+  <div class="header-meta">
+    <span>Prepared for: Thrive PR + Communications</span>
+    <span>Date: April 2026</span>
+    <span>Version: 1.0</span>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ───────────────── SECTION 1 ───────────────── -->
+<h2>1. Executive Summary</h2>
+
+<p>Phase 1 (approved) captures work from <strong>Gmail, Google Calendar, and Google Drive</strong>.</p>
+
+<p>Phase 2 adds a <strong>lightweight Chrome extension</strong> that silently tracks which websites your team uses and for how long. Combined with a <strong>per-user AI profile</strong> that learns each person's patterns over time, the system becomes dramatically smarter — suggesting time entries that are more accurate, faster to approve, and require less manual input.</p>
+
+<div class="callout-green callout">
+  <strong>The result:</strong>
+  A timesheet assistant that captures work from <em>every</em> digital source — email, calendar, documents, and browser — and learns each team member's habits to reduce time logging from 15 minutes/day to under 2 minutes.
+</div>
+
+<!-- ───────────────── SECTION 2 ───────────────── -->
+<h2>2. What We're Building</h2>
+
+<h3>2A. Chrome Extension</h3>
+<p>A small, silent Chrome extension that tracks the <strong>active tab's domain name</strong> and <strong>page title</strong> while the user works. It does not read page content, capture screenshots, or log keystrokes.</p>
+
+<table>
+  <tr><th width="30%">What it captures</th><th>Example</th></tr>
+  <tr><td>Domain name</td><td><code>canva.com</code></td></tr>
+  <tr><td>Page title</td><td>"Fonterra Campaign Banner — Canva"</td></tr>
+  <tr><td>Active duration</td><td>2 hours 15 minutes</td></tr>
+  <tr><td>Session timestamps</td><td>9:15am — 11:30am</td></tr>
+</table>
+
+<table>
+  <tr><th width="30%">What it does NOT capture</th><th>Why</th></tr>
+  <tr><td>Full URLs / paths</td><td>Privacy — domain is sufficient</td></tr>
+  <tr><td>Page content / text</td><td>Australian privacy compliance</td></tr>
+  <tr><td>Form data / passwords</td><td>Security — never accessed</td></tr>
+  <tr><td>Screenshots / keystrokes</td><td>Not surveillance — this is a helper tool</td></tr>
+  <tr><td>Incognito / private tabs</td><td>Automatically excluded by Chrome</td></tr>
+</table>
+
+<h3>2B. Smart Deduplication Engine</h3>
+<p>When a user edits a Google Doc, that activity appears in <em>both</em> Google Drive and Chrome (docs.google.com). When they read emails, it shows in Gmail <em>and</em> Chrome. Without deduplication, the system would suggest double entries.</p>
+
+<p>The deduplication engine prevents this by cross-referencing all data sources before suggesting entries:</p>
+
+<div class="diagram">
+  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+  │    Gmail      │  │   Calendar   │  │  Google Drive │  │   Chrome     │
+  │  (emails)     │  │  (meetings)  │  │   (files)     │  │  (browsing)  │
+  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+         │                  │                  │                  │
+         └──────────┬───────┴──────────┬───────┘                  │
+                    │                  │                           │
+                    ▼                  ▼                           │
+            ┌──────────────────────────────────────┐              │
+            │     DEDUPLICATION ENGINE              │◄─────────────┘
+            │                                       │
+            │  1. Time-window overlap detection     │
+            │  2. Domain ↔ Source matching           │
+            │  3. Activity fingerprinting            │
+            │  4. Source priority ranking             │
+            └──────────────┬────────────────────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │   Claude AI      │
+                  │                  │
+                  │  Sees unified,   │
+                  │  deduplicated    │
+                  │  activity feed   │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │  Draft Entries   │
+                  │  (user approves) │
+                  └────────┬────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │    Harvest       │
+                  └─────────────────┘</div>
+
+<h3>How Deduplication Works</h3>
+
+<table>
+  <tr><th>Scenario</th><th>What Happens</th></tr>
+  <tr>
+    <td>User edits Google Doc in Chrome</td>
+    <td><strong>Drive wins.</strong> Chrome activity on <code>docs.google.com</code> is suppressed because Drive already has the specific file name and edit time. Chrome adds nothing new.</td>
+  </tr>
+  <tr>
+    <td>User reads Gmail in Chrome</td>
+    <td><strong>Gmail wins.</strong> Chrome activity on <code>mail.google.com</code> is suppressed. Gmail already has sender, subject, and timestamp.</td>
+  </tr>
+  <tr>
+    <td>User joins Google Meet from Calendar</td>
+    <td><strong>Calendar wins.</strong> Chrome on <code>meet.google.com</code> is suppressed. Calendar already has meeting name, duration, attendees.</td>
+  </tr>
+  <tr>
+    <td>User works on Canva for 2 hours</td>
+    <td><strong>Chrome wins.</strong> No other source captures Canva activity. This is the gap Chrome fills.</td>
+  </tr>
+  <tr>
+    <td>User browses LinkedIn + writes email about same client</td>
+    <td><strong>Both kept, merged.</strong> Claude sees "1h LinkedIn + email to Client X" and suggests one combined entry, not two.</td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>Source Priority (highest to lowest):</strong>
+  Calendar (most specific — named meetings with durations) → Gmail (subject lines map to clients) → Drive (file names map to projects) → Chrome (catch-all for everything else)
+</div>
+
+<p><strong>Automatic domain exclusions:</strong> When Gmail, Calendar, or Drive scanning is active, the extension automatically excludes <code>mail.google.com</code>, <code>calendar.google.com</code>, <code>docs.google.com</code>, <code>drive.google.com</code>, and <code>meet.google.com</code> from Chrome tracking. Zero duplicates from Google services.</p>
+
+<h3>2C. Per-User AI Profiles</h3>
+
+<p>Every person at Thrive works differently. A senior account manager's Chrome activity looks nothing like a junior designer's. The AI profile system learns each user's unique patterns and gets smarter over time.</p>
+
+<h3>What the AI Learns Per User</h3>
+
+<table>
+  <tr><th width="35%">Pattern</th><th>Example</th><th width="25%">How It Helps</th></tr>
+  <tr>
+    <td>Domain → Client mapping</td>
+    <td>"When Sarah uses Canva, it's usually Fonterra (80%) or Afterpay (20%)"</td>
+    <td>Suggests correct client automatically</td>
+  </tr>
+  <tr>
+    <td>Time-of-day patterns</td>
+    <td>"Tariq does Afterpay work in the morning, AGL in the afternoon"</td>
+    <td>Better guesses when evidence is ambiguous</td>
+  </tr>
+  <tr>
+    <td>Typical session durations</td>
+    <td>"Designers average 2h on Canva per session, account managers 30min"</td>
+    <td>More accurate time estimates</td>
+  </tr>
+  <tr>
+    <td>Approval patterns</td>
+    <td>"James always edits 'Operations' entries to 'Business Development'"</td>
+    <td>Learns from corrections, doesn't repeat mistakes</td>
+  </tr>
+  <tr>
+    <td>Tool-to-task mapping</td>
+    <td>"Hootsuite = Social Media Management, WordPress = Content Creation"</td>
+    <td>Maps browser tools to Harvest tasks</td>
+  </tr>
+  <tr>
+    <td>Day-of-week rhythms</td>
+    <td>"Monday = team meetings + admin, Friday = reporting + timesheets"</td>
+    <td>Context-aware suggestions</td>
+  </tr>
+</table>
+
+<div class="callout-green callout">
+  <strong>How it gets smarter:</strong>
+  Every time a user approves, edits, or rejects a suggested entry, the system records the correction. After 2-3 weeks of use, each user's AI profile is calibrated to their specific work patterns. Accuracy improves from ~60% (day one) to ~90%+ (after training).
+</div>
+
+<h3>Privacy Guarantee</h3>
+<p>AI profiles are:</p>
+<ul>
+  <li><strong>Per-user only</strong> — your profile is never shared with other users or managers</li>
+  <li><strong>Metadata-based</strong> — learns from domains, time patterns, and approval history (never content)</li>
+  <li><strong>Deletable</strong> — any user can reset their profile at any time</li>
+  <li><strong>Transparent</strong> — users can see what their profile has learned ("Show my patterns")</li>
+  <li><strong>Australian-compliant</strong> — same metadata-only architecture as Phase 1</li>
+</ul>
+
+<!-- ───────────────── SECTION 3 ───────────────── -->
+<h2>3. Integration Architecture</h2>
+
+<p>The Chrome extension slots into the existing system as a <strong>fourth data source</strong> alongside Gmail, Calendar, and Drive. No changes to the existing approval workflow.</p>
+
+<div class="diagram">
+  USER'S DAILY WORKFLOW
+  ═══════════════════════════════════════════════════════════════
+
+  Morning:  Opens emails, joins meetings, edits documents
+            ↓ captured by Gmail API, Calendar API, Drive API
+            ↓ (already built in Phase 1)
+
+  All day:  Works in Chrome — Canva, LinkedIn, client portals,
+            Hootsuite, WordPress, Asana, Slack web...
+            ↓ captured by Chrome Extension (Phase 2)
+            ↓ sent to backend every 5 minutes
+
+  End of day: Opens Timesheet Assistant
+              ↓
+            ┌─────────────────────────────────────────────┐
+            │  "Review My Day" button                      │
+            │                                              │
+            │  System pulls from ALL FOUR sources:         │
+            │  ✓ Gmail      → 15 emails (3 client threads) │
+            │  ✓ Calendar   → 4 meetings (3h total)        │
+            │  ✓ Drive      → 6 documents edited           │
+            │  ✓ Chrome     → 5 sites tracked (4.5h)       │  ← NEW
+            │                                              │
+            │  Dedup engine merges and removes overlaps     │
+            │                                              │
+            │  AI profile adds context:                     │  ← NEW
+            │  "Sarah usually logs Canva as Fonterra"       │
+            │  "LinkedIn on Wednesdays = Afterpay"          │
+            │                                              │
+            │  Claude suggests 6 time entries:              │
+            │  ✓ Fonterra — Design (Canva) — 2.5h          │
+            │  ✓ Afterpay — Social Media — 1h              │
+            │  ✓ Acuity — Client Meeting — 1h              │
+            │  ✓ AGL — Proposal Review — 45min             │
+            │  ✓ Internal — Team Standup — 30min            │
+            │  ✓ Afterpay — Content (WordPress) — 45min     │
+            └──────────────────┬──────────────────────────┘
+                               │
+                               ▼
+              User reviews, tweaks if needed, clicks Approve
+                               │
+                               ▼
+                        Pushed to Harvest
+                        (in under 2 minutes)</div>
+
+<!-- ───────────────── SECTION 4 ───────────────── -->
+<h2>4. Build Timeline</h2>
+
+<div class="timeline">
+  <div class="timeline-item">
+    <div class="timeline-left">Days 1–5</div>
+    <div class="timeline-bar"></div>
+    <div class="timeline-right">
+      <h4>Chrome Extension Core</h4>
+      <p>Manifest V3 extension, active tab tracking, idle detection, domain grouping, user authentication, data sync to backend. Extension popup UI with ON/OFF toggle and domain exclude-list.</p>
+    </div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-left">Days 6–8</div>
+    <div class="timeline-bar"></div>
+    <div class="timeline-right">
+      <h4>Backend Integration</h4>
+      <p>API endpoints for receiving Chrome activity, daily summary generation, <code>scan_chrome</code> tool for Claude (same pattern as scan_emails/scan_calendar/scan_drive), "Review My Day" button in dashboard.</p>
+    </div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-left">Days 9–11</div>
+    <div class="timeline-bar"></div>
+    <div class="timeline-right">
+      <h4>Deduplication Engine</h4>
+      <p>Time-window overlap detection, domain-to-source matching, Google domain auto-exclusion, activity fingerprinting, source priority ranking, unified activity feed for Claude.</p>
+    </div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-left">Days 12–14</div>
+    <div class="timeline-bar"></div>
+    <div class="timeline-right">
+      <h4>Per-User AI Profiles</h4>
+      <p>Profile data model, approval/correction tracking, pattern learning engine, domain-to-client mapping, confidence scoring, profile-enhanced system prompts for Claude, "Show my patterns" transparency view.</p>
+    </div>
+  </div>
+  <div class="timeline-item">
+    <div class="timeline-left">Day 15</div>
+    <div class="timeline-bar"></div>
+    <div class="timeline-right">
+      <h4>Testing, QA &amp; Deployment</h4>
+      <p>End-to-end testing with pilot users, dedup accuracy validation, extension performance testing, Chrome Web Store / enterprise deployment via Google Admin Console, production rollout.</p>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>Total build time: 15 working days</strong> from commencement to production deployment. Pilot testing begins at Day 12 (extension + dedup ready), full rollout at Day 15 (AI profiles active).
+</div>
+
+<!-- ───────────────── SECTION 5 ───────────────── -->
+<h2>5. Cost Structure</h2>
+
+<h3>One-Time Build</h3>
+
+<table>
+  <tr><th>Component</th><th>Scope</th><th style="text-align:right">Cost (USD)</th></tr>
+  <tr style="background: #f0f9ff;">
+    <td><strong>Chrome Extension</strong></td>
+    <td>Manifest V3 extension, tab tracking, idle detection, popup UI, domain exclude-list, user auth, data sync, backend integration, deduplication engine, per-user AI profiles, testing &amp; deployment</td>
+    <td style="text-align:right"><strong>$3,250</strong></td>
+  </tr>
+</table>
+
+<h3>Monthly Subscription — Platform Tiers</h3>
+
+<p>As the platform grows in capability, the monthly subscription reflects the value delivered. Each tier includes everything in the tier below it.</p>
+
+<div class="pricing-grid">
+  <div class="pricing-card">
+    <h4>Standard</h4>
+    <div class="price">$5<span>/user/mo</span></div>
+    <div class="desc">Annual commitment</div>
+    <ul>
+      <li>Gmail scanning</li>
+      <li>Calendar scanning</li>
+      <li>Drive scanning</li>
+      <li>AI time entry drafts</li>
+      <li>Harvest integration</li>
+      <li>Approval workflow</li>
+    </ul>
+    <div class="desc" style="margin-top:8px; font-style:italic;">Phase 1 — current</div>
+  </div>
+  <div class="pricing-card highlight">
+    <h4>Professional</h4>
+    <div class="price">$6.50<span>/user/mo</span></div>
+    <div class="desc">Annual commitment</div>
+    <ul>
+      <li>Everything in Standard</li>
+      <li><strong>Chrome tracking</strong></li>
+      <li><strong>Smart deduplication</strong></li>
+      <li><strong>Per-user AI profiles</strong></li>
+      <li><strong>"Review My Day" mode</strong></li>
+      <li>Priority support</li>
+    </ul>
+    <div class="desc" style="margin-top:8px; font-style:italic;">Phase 2 — this proposal</div>
+  </div>
+</div>
+
+<p style="font-size: 12px; color: #64748b;">Month-to-month pricing: Standard $7.50 | Professional $10 per user/month. 50-user minimum billing floor applies to all tiers.</p>
+
+<!-- ───────────────── SECTION 6 ───────────────── -->
+<h2>6. Enterprise Deployment (50+ Users)</h2>
+
+<p>For Thrive's 50-60 person team, the Chrome extension is deployed via <strong>Google Admin Console</strong> — not the public Chrome Web Store. This means:</p>
+
+<ul>
+  <li><strong>Centralized install</strong> — IT admin pushes the extension to all users at once</li>
+  <li><strong>No user action needed</strong> — extension appears automatically in Chrome</li>
+  <li><strong>Policy-managed</strong> — can be mandatory or optional per user group</li>
+  <li><strong>Updates pushed silently</strong> — new versions deploy without user intervention</li>
+  <li><strong>Removable by admin</strong> — can be rolled back instantly if needed</li>
+</ul>
+
+<p>Thrive already uses Google Workspace, so this infrastructure is already in place.</p>
+
+<!-- ───────────────── SECTION 7 ───────────────── -->
+<h2>7. Privacy &amp; Compliance (Australian Law)</h2>
+
+<p>Phase 2 maintains the same metadata-only architecture as Phase 1:</p>
+
+<table>
+  <tr><th>Requirement</th><th>How We Meet It</th></tr>
+  <tr><td>Privacy Act 1988</td><td>Metadata only (domains + titles). No page content. Explicit opt-in consent. Cross-border AI processing disclosed.</td></tr>
+  <tr><td>Fair Work Act 2009</td><td>Employee notification before deployment. Extension has visible ON/OFF control. Not covert surveillance.</td></tr>
+  <tr><td>Copyright Act 1968</td><td>No page content captured or stored. Domain names and page titles are not copyrightable.</td></tr>
+  <tr><td>User control</td><td>ON/OFF toggle, personal domain exclude-list, full profile deletion, activity history viewable.</td></tr>
+  <tr><td>Data handling</td><td>Activity data processed in-memory by Claude. Only approved time entries stored permanently. Raw activity data auto-deleted after 30 days.</td></tr>
+</table>
+
+</div>
+
+<div class="footer">
+  <p>Confidential — Prepared by Sitara Infotech for Thrive PR + Communications</p>
+  <p>Questions? Contact Malik Amin — amin@sitaratech.info</p>
+</div>
+
+</div>
+</body>
+</html>

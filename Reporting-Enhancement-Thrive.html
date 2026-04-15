@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporting &amp; Forecast Automation — Enhancement Proposal | Sitara Infotech</title>
+<style>
+  :root {
+    --navy: #1e3a5f;
+    --navy-light: #2c5282;
+    --gray-50: #f7fafc;
+    --gray-100: #edf2f7;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e0;
+    --gray-600: #718096;
+    --gray-700: #4a5568;
+    --gray-800: #2d3748;
+    --green: #276749;
+    --green-light: #f0fff4;
+    --amber: #92400e;
+    --amber-light: #fffbeb;
+    --blue: #2b6cb0;
+    --blue-light: #ebf8ff;
+  }
+
+  @page { margin: 2cm 2.5cm; size: A4; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.6;
+    color: var(--gray-800);
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 2cm 2.5cm;
+    background: #fff;
+  }
+
+  .cover {
+    text-align: center;
+    padding: 50px 0 35px;
+    border-bottom: 3px solid var(--navy);
+    margin-bottom: 36px;
+  }
+  .cover .company {
+    font-size: 13pt;
+    font-weight: 600;
+    color: var(--navy);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 40px;
+  }
+  .cover h1 {
+    font-size: 24pt;
+    font-weight: 300;
+    color: var(--navy);
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  .cover .subtitle {
+    font-size: 13pt;
+    color: var(--gray-700);
+    font-weight: 400;
+    margin-bottom: 40px;
+  }
+  .cover .meta {
+    font-size: 10pt;
+    color: var(--gray-600);
+    line-height: 2;
+  }
+  .cover .meta strong {
+    color: var(--gray-800);
+    display: inline-block;
+    width: 120px;
+    text-align: right;
+    margin-right: 12px;
+  }
+
+  h2 {
+    font-size: 14pt;
+    color: var(--navy);
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 5px;
+    margin: 32px 0 14px;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 11.5pt;
+    color: var(--navy-light);
+    margin: 20px 0 8px;
+    font-weight: 600;
+  }
+
+  p { margin-bottom: 10px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 18px;
+    font-size: 10pt;
+  }
+  th {
+    background: var(--navy);
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 9px 12px;
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--gray-200);
+  }
+  tr:nth-child(even) td { background: var(--gray-50); }
+  .highlight-row td {
+    background: var(--green-light) !important;
+    font-weight: 600;
+  }
+  .amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ul { margin: 8px 0 14px 24px; }
+  li { margin-bottom: 5px; }
+
+  .callout {
+    background: var(--gray-50);
+    border-left: 4px solid var(--navy);
+    padding: 13px 16px;
+    margin: 14px 0;
+    font-size: 10pt;
+  }
+  .callout-blue {
+    background: var(--blue-light);
+    border-left-color: var(--blue);
+  }
+  .callout-amber {
+    background: var(--amber-light);
+    border-left-color: var(--amber);
+  }
+
+  .doc-footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid var(--gray-300);
+    font-size: 8.5pt;
+    color: var(--gray-600);
+    text-align: center;
+  }
+
+  .page-break { page-break-before: always; }
+
+  @media print {
+    body { padding: 0; margin: 0; }
+    .page-break { page-break-before: always; }
+    .no-break { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+    h3 { page-break-after: avoid; }
+    table { page-break-inside: avoid; }
+    .callout { page-break-inside: avoid; }
+    ul { page-break-inside: avoid; }
+  }
+
+  @page {
+    margin: 20mm 22mm;
+    size: A4;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="company">Sitara Infotech</div>
+  <h1>Reporting &amp; Forecast Automation</h1>
+  <div class="subtitle">Enhancement Proposal &mdash; Thrive PR + Communications</div>
+  <div class="meta">
+    <strong>Date:</strong> 25 March 2026<br>
+    <strong>Status:</strong> For Discussion &mdash; Scope &amp; Pricing TBC<br>
+    <strong>Companion to:</strong> Statement of Work v3.0
+  </div>
+</div>
+
+<!-- ============ CONTEXT ============ -->
+<h2>Your Current Reporting Workflow</h2>
+<p>
+  Based on the reporting templates and screenshots shared by your team, we understand that
+  Thrive's current time and utilisation reporting involves several manual steps:
+</p>
+<ul>
+  <li><strong>Time entry exports</strong> &mdash; detailed time data is exported from Harvest to Excel
+    (date, client, project, task, notes, hours) for analysis and record-keeping</li>
+  <li><strong>Forecast scheduling data</strong> &mdash; scheduled hours and resource allocations are viewed
+    in the Harvest Forecast interface and referenced separately when building reports</li>
+  <li><strong>Utilisation reports</strong> &mdash; actual hours (from Harvest) are manually cross-referenced
+    against scheduled hours (from Forecast) to calculate utilisation rates, billable percentages,
+    and capacity gaps per employee</li>
+  <li><strong>Team roster</strong> &mdash; employee information including roles, locations, and departments
+    is maintained and referenced alongside the above</li>
+</ul>
+
+<p>
+  The result is a reporting process that requires someone to pull data from two separate systems,
+  combine them in Excel, and produce the final utilisation summary by hand. This is repeated
+  weekly or monthly.
+</p>
+
+<!-- ============ WHAT WE CAN AUTOMATE ============ -->
+<h2>What the APIs Make Possible</h2>
+<p>
+  The Harvest and Forecast APIs provide programmatic access to all the underlying data.
+  When combined, they can replace the manual export-and-assemble workflow entirely.
+</p>
+
+<table>
+  <tr>
+    <th>Report</th>
+    <th>Current Method</th>
+    <th>With Automation</th>
+  </tr>
+  <tr>
+    <td>Detailed time entries</td>
+    <td>Manual CSV export from Harvest</td>
+    <td>On-demand or scheduled via Harvest API</td>
+  </tr>
+  <tr>
+    <td>Scheduled hours &amp; resource allocation</td>
+    <td>Viewed in Forecast UI, cross-referenced manually</td>
+    <td>Pulled via Forecast API and merged automatically</td>
+  </tr>
+  <tr>
+    <td>Team utilisation (actual vs scheduled)</td>
+    <td>Built manually in Excel from two sources</td>
+    <td>Auto-generated &mdash; Harvest API returns both when linked</td>
+  </tr>
+  <tr>
+    <td>Billable percentage by employee</td>
+    <td>Calculated manually per period</td>
+    <td>Computed in real time from Harvest reports endpoint</td>
+  </tr>
+  <tr>
+    <td>Capacity &amp; availability gaps</td>
+    <td>Separate Forecast lookup + manual comparison</td>
+    <td>Integrated view with flagging for under-capacity</td>
+  </tr>
+</table>
+
+<!-- ============ EXAMPLE ============ -->
+<h2>Example: Automated Team Utilisation Report</h2>
+<p>
+  The following illustrates the kind of report that can be generated automatically
+  from Harvest and Forecast data, matching the structure of your existing Excel reports:
+</p>
+
+<table>
+  <tr>
+    <th>Employee</th>
+    <th class="amount">Scheduled</th>
+    <th class="amount">Actual</th>
+    <th class="amount">Utilisation</th>
+    <th class="amount">Billable %</th>
+    <th>Flag</th>
+  </tr>
+  <tr>
+    <td>Alice Chen</td>
+    <td class="amount">40.0 h</td>
+    <td class="amount">37.5 h</td>
+    <td class="amount">93.8%</td>
+    <td class="amount">82.0%</td>
+    <td>&mdash;</td>
+  </tr>
+  <tr>
+    <td>James Wilson</td>
+    <td class="amount">40.0 h</td>
+    <td class="amount">28.0 h</td>
+    <td class="amount">70.0%</td>
+    <td class="amount">65.0%</td>
+    <td style="color: var(--amber);">Under-logged</td>
+  </tr>
+  <tr>
+    <td>Priya Patel</td>
+    <td class="amount">32.0 h</td>
+    <td class="amount">34.5 h</td>
+    <td class="amount">107.8%</td>
+    <td class="amount">91.0%</td>
+    <td style="color: var(--blue);">Over-capacity</td>
+  </tr>
+  <tr class="highlight-row">
+    <td><strong>Team Total</strong></td>
+    <td class="amount"><strong>480.0 h</strong></td>
+    <td class="amount"><strong>412.5 h</strong></td>
+    <td class="amount"><strong>85.9%</strong></td>
+    <td class="amount"><strong>78.3%</strong></td>
+    <td>&mdash;</td>
+  </tr>
+</table>
+
+<p>Additional automated outputs can include:</p>
+<ul>
+  <li>Weekly or monthly reports delivered as Google Docs or PDF, auto-shared to managers</li>
+  <li>Hours breakdown by client and project &mdash; matching Harvest's project structure</li>
+  <li>Attention flags: users below target hours, pending approvals, missing time gaps</li>
+  <li>Forecast vs actual variance by project &mdash; are projects on track against scheduled allocations?</li>
+</ul>
+
+<!-- ============ DELIVERY OPTIONS ============ -->
+<h2>Delivery Options</h2>
+<p>The reporting enhancement can be delivered in the format that best fits your team's workflow:</p>
+<ul>
+  <li><strong>Formatted report</strong> &mdash; matching your current Excel layout, generated on a schedule and delivered to a shared drive or inbox</li>
+  <li><strong>Auto-generated Google Doc</strong> &mdash; professional formatted document, auto-shared to managers every Friday</li>
+  <li><strong>Live web dashboard</strong> &mdash; real-time view accessible from the timesheet assistant, with filters by team, date range, and project</li>
+</ul>
+
+<!-- ============ PREREQUISITES ============ -->
+<h2>Prerequisites</h2>
+<table>
+  <tr>
+    <th>#</th>
+    <th>Item</th>
+    <th>Notes</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>Harvest Forecast API key</td>
+    <td>Separate from the Harvest API token. Generated in Forecast admin settings.</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>Confirmation that Thrive's Harvest plan includes Forecast</td>
+    <td>To be confirmed during kickoff</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Phase 1 operational</td>
+    <td>Core time-logging platform live before reporting layer is added</td>
+  </tr>
+</table>
+
+<!-- ============ SCOPE & PRICING ============ -->
+<div class="callout callout-blue">
+  <strong>Scope &amp; pricing to be confirmed</strong> once Phase 1 is operational and
+  specific reporting requirements are finalised. This document is provided for discussion
+  purposes to outline what is technically possible and how it maps to your current workflow.
+</div>
+
+<div class="doc-footer">
+  Sitara Infotech &nbsp;&bull;&nbsp; Reporting Enhancement Proposal &nbsp;&bull;&nbsp; 25 March 2026 &nbsp;&bull;&nbsp; Confidential
+</div>
+
+</body>
+</html>

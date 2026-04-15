@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Timesheet Assistant — CFO Brief | Sitara Infotech</title>
+<style>
+  @page {
+    margin: 13mm;
+    size: A4;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.35;
+    color: #2d3748;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 13mm;
+    background: #fff;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #1e3a5f;
+    margin-bottom: 12px;
+  }
+
+  .header .company {
+    font-size: 15pt;
+    font-weight: 700;
+    color: #1e3a5f;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .header .date {
+    font-size: 8.5pt;
+    color: #718096;
+    text-align: right;
+  }
+
+  h1 {
+    font-size: 17pt;
+    color: #1e3a5f;
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+
+  .subtitle {
+    font-size: 10.5pt;
+    color: #4a5568;
+    margin-bottom: 10px;
+  }
+
+  h2 {
+    font-size: 10.5pt;
+    color: #1e3a5f;
+    margin: 10px 0 5px;
+    font-weight: 600;
+    border-bottom: 1px solid #cbd5e0;
+    padding-bottom: 2px;
+  }
+
+  h2:first-of-type {
+    margin-top: 6px;
+  }
+
+  p {
+    margin-bottom: 4px;
+  }
+
+  ul {
+    margin: 3px 0 6px 17px;
+    padding: 0;
+  }
+
+  li {
+    margin-bottom: 1.5px;
+    font-size: 9pt;
+    line-height: 1.35;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 5px 0 7px;
+    font-size: 9pt;
+  }
+
+  th {
+    background: #1e3a5f;
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+    padding: 5px 9px;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  td {
+    padding: 4px 9px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  tr:nth-child(even) td {
+    background: #f7fafc;
+  }
+
+  .highlight-row td {
+    background: #f0fff4 !important;
+    font-weight: 600;
+    color: #276749;
+  }
+
+  .amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .callout {
+    background: #f0fff4;
+    border-left: 3px solid #276749;
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 9.5pt;
+  }
+
+  .callout strong {
+    color: #276749;
+  }
+
+  .footer {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid #cbd5e0;
+    font-size: 7.5pt;
+    color: #718096;
+    text-align: center;
+  }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 8px 0;
+  }
+
+  .box {
+    background: #edf2f7;
+    padding: 10px;
+    border-radius: 4px;
+  }
+
+  .box h3 {
+    font-size: 10pt;
+    color: #1e3a5f;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .box ul {
+    margin: 4px 0 0 16px;
+  }
+
+  .box li {
+    font-size: 9pt;
+    margin-bottom: 2px;
+  }
+
+  @media print {
+    body { padding: 0; margin: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="company">Sitara Infotech</div>
+  <div class="date">
+    <strong>Prepared for:</strong> Thrive PR + Communications<br>
+    <strong>Date:</strong> 7 April 2026
+  </div>
+</div>
+
+<!-- Title -->
+<h1>AI-Powered Timesheet Assistant</h1>
+<div class="subtitle">Executive Brief — Implementation & Costing</div>
+
+<!-- Current Status -->
+<h2>Current Status</h2>
+<p><strong>Demo:</strong> Delivered and live at <em>timesheet-assistant-jclk.onrender.com</em></p>
+<p><strong>POC Approved:</strong> Proceeding with 1-2 Thrive users using real Harvest data.</p>
+<p><strong>Latest Enhancement:</strong> Agentic AI deployed — users can now say <em>"scan my emails with Tariq from last week"</em> and the system autonomously analyzes metadata and suggests time entries mapped to Harvest projects.</p>
+
+<!-- What's Included -->
+<h2>Phase 1 Deliverables</h2>
+<ul>
+  <li>AI voice + text time logging</li>
+  <li>Google SSO login (60 users)</li>
+  <li>Gmail integration (metadata scanning)</li>
+  <li>Google Calendar meeting detection</li>
+  <li>Google Drive activity signals</li>
+  <li>Draft-approval workflow (Google Sheet)</li>
+  <li>Harvest sync after user approval</li>
+  <li>Multi-user support + admin visibility</li>
+  <li>10-day post go-live hypercare</li>
+  <li>Australian legal compliance (metadata-only)</li>
+</ul>
+
+<!-- Pricing -->
+<h2>Implementation & Monthly Pricing (USD)</h2>
+<table>
+  <tr>
+    <th>Phase</th>
+    <th>Description</th>
+    <th class="amount">Investment</th>
+  </tr>
+  <tr>
+    <td>Demo</td>
+    <td>Current live demo with AI chat, Calendar, Drive integration</td>
+    <td class="amount">Delivered</td>
+  </tr>
+  <tr>
+    <td>POC</td>
+    <td>Proof of concept with 1-2 Thrive users, real Harvest credentials</td>
+    <td class="amount">$500</td>
+  </tr>
+  <tr class="highlight-row">
+    <td>Phase 1</td>
+    <td>Production rollout (60 users) — Gmail, Calendar, Drive, draft approval, Harvest sync, 10-day hypercare</td>
+    <td class="amount">$5,850</td>
+  </tr>
+</table>
+
+<table style="margin-top: 12px;">
+  <tr>
+    <th>Monthly Service (Per User)</th>
+    <th class="amount">Annual Licence</th>
+    <th class="amount">Month-to-Month</th>
+  </tr>
+  <tr class="highlight-row">
+    <td>All-inclusive: AI processing, Google APIs, Harvest sync, hosting, support</td>
+    <td class="amount">$5.00/user</td>
+    <td class="amount">$7.50/user</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="font-size: 8pt; color: #718096; padding-top: 3px;"><strong>50-user minimum billing floor</strong> — ensures predictable service levels and infrastructure allocation</td>
+  </tr>
+</table>
+
+<!-- Payment Terms -->
+<h2>Payment Terms</h2>
+<ul>
+  <li><strong>POC:</strong> $500 due on commencement (credited to Phase 1 if proceed within 7 days)</li>
+  <li><strong>Phase 1:</strong> 50% on commencement ($2,925), 50% on delivery ($2,925)</li>
+  <li><strong>Monthly:</strong> Beginning of each calendar month, 50-user minimum</li>
+  <li><strong>Timeline:</strong> Phase 1 delivery approximately 4 weeks from receiving Harvest credentials and user list</li>
+</ul>
+
+<!-- Kickoff Requirements -->
+<h2>Kickoff Requirements (for 1-2 User Pilot)</h2>
+<ul>
+  <li>Harvest API access token + Account ID (Thrive's production account)</li>
+  <li>1-2 pilot user email addresses (Google accounts)</li>
+  <li>Confirm pilot users assigned to at least one Harvest project</li>
+  <li>Google Workspace admin access to mark app as Internal (enables org-wide sign-in)</li>
+</ul>
+
+<!-- Footer -->
+<div class="footer">
+  Sitara Infotech — AI-Powered Timesheet Assistant — CFO Brief — 7 April 2026 — Confidential
+</div>
+
+</body>
+</html>

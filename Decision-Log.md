@@ -270,3 +270,164 @@ Impact on plan:
 - Phase 1: Existing live demo can be treated as the free POC.
 - Phase 2: Reframed as Google-native rollout with Gmail + approval-first workflow.
 - Phase 3: Browser extension / non-Google capture remains a separate paid build after the Google-native rollout.
+
+---
+
+## 2026-03-25 (Meeting with Tariq - SoW Finalisation)
+Attendees: Tariq Munir, Malik Amin
+
+Context:
+- Tariq shared screenshots of Thrive's current reporting workflow (docx with 6 screenshots).
+- Screenshots reveal: manual Harvest CSV exports, Forecast UI scheduling, manual Excel utilisation reports, team roster data.
+- Tariq wants to finalise SoW and move forward. No Gmail sidebar prototype needed yet.
+
+Decisions:
+1. Gmail sidebar add-on — excluded from Phase 1, future enhancement. Gmail API integration (scanning) stays in scope.
+2. Browser extension — separate Phase 2, wait for now.
+3. Push reminders, weekly manager reports, admin dashboards — scoped as future enhancements, pricing TBC.
+4. Reporting/Forecast automation — presented as a separate companion document, not in main SoW. Scope and pricing TBC once Phase 1 is live.
+5. SoW v3.0 created at $5,850 implementation (up from $5,450 in v2.0 which was never sent).
+6. New pricing structure: Demo (Delivered) → POC ($500 for 1-2 Thrive users) → Phase 1 ($5,850).
+7. POC $500 credited to Phase 1 if Thrive proceeds within 7 working days.
+8. Monthly pricing: $5/user annual, $7.50/user M2M, 50-user minimum — both options explained to Tariq.
+9. Removed exclusions list, annual cost projection, and market comparison from SoW — kept it cleaner.
+10. On-site AND remote training explicitly excluded (not included in fees).
+
+Tariq's screenshots analysis:
+- Harvest time entries exported to Excel manually (columns: date, client, project, task, notes, hours).
+- Forecast Gantt view showing team resource allocation across projects.
+- Manual utilisation report in Excel (billable %, scheduled vs actual, capacity per employee).
+- Team roster with roles, locations (Melbourne, Sydney, Brisbane), departments.
+- Forecast web UI: "This week: 23-29 Mar 2026" — 480.48 scheduled, 2,262.50 logged.
+- KEY INSIGHT: Someone at Thrive manually builds utilisation reports weekly/monthly by cross-referencing Harvest exports with Forecast data in Excel. This is the automation opportunity.
+
+API findings:
+- Harvest API /reports/time/team?include_forecast=true returns total_hours, billable_hours, AND scheduled_hours per user.
+- Forecast API (api.forecast.it) is SEPARATE — needs its own API key (X-FORECAST-API-KEY header).
+- Forecast /allocations gives daily scheduled hours in MINUTES (divide by 60).
+- Forecast /persons gives capacity and working hours per day.
+- Need BOTH API keys to fully automate the reporting workflow.
+
+Documents created:
+- SOW-Thrive-v3.html → SOW-Thrive-v3.pdf (8 pages, professional)
+- Reporting-Enhancement-Thrive.html → Reporting-Enhancement-Thrive.pdf (3 pages, companion doc)
+
+Approval flow:
+- Both documents sent to CFO Jawad (Board Member, Sitara Infotech) for internal review.
+- Once Jawad approves, documents will be shared with Tariq.
+
+Open questions for Tariq (in SoW Section 8):
+1. Approval cadence: daily, weekly, or both?
+2. Gmail depth: sent mail only or full client threads?
+3. Harvest entry status: drafts or ready-to-submit?
+4. Rollout: pilot first or direct 50-60?
+5. Admin owner for rollout?
+6. Does Thrive have Harvest Forecast API access?
+7. Google Workspace plan tier?
+
+Kickoff requirements (for 1-2 user pilot):
+1. Harvest API token + Account ID (real Thrive account)
+2. 1-2 pilot user emails
+3. Pilot users assigned to at least one Harvest project
+4. Google Workspace admin to mark app as Internal
+5. Forecast API key (optional, for reporting phase)
+
+Action items:
+1. [Jawad] Review and approve SoW v3.0 + Reporting Enhancement doc. [ASAP]
+2. [Malik] Share both documents with Tariq once Jawad approves. [Post-approval]
+3. [Tariq] Answer 7 confirmation questions in SoW Section 8. [Post-receipt]
+4. [Tariq] Provide Harvest API token + Account ID for pilot. [Post-approval]
+
+Impact on plan:
+- Phase 1: SoW v3.0 finalised at $5,850. Waiting on internal approval then client sign-off.
+- Reporting: Separate enhancement, TBC pricing, dependent on Phase 1 completion + Forecast API access.
+- Phase 2 (browser extension): Parked. Will be scoped separately when ready.
+
+---
+
+## 2026-04-01 (Tariq Quick Check-In)
+Attendees: Tariq Munir, Malik Amin
+
+Context:
+- Quick 5-minute meeting to confirm next steps
+- SoW v3.0 has been created but not yet formally shared with Tariq (waiting on internal approval)
+
+Decisions made:
+1. **Proceed with POC**: 1-2 user proof of concept to validate with real Harvest data
+2. **Timeline**: Next decision point in ~1 week after POC validation
+3. **Critical requirement**: Must comply with Australian laws, especially copyright laws and privacy regulations
+4. **No formal SoW sign-off yet**: Will review after POC demonstrates compliance and functionality
+
+Compliance requirements added:
+1. **Copyright Act 1968 (Cth)**: No reproduction of copyrighted email/document content
+2. **Privacy Act 1988 (Cth)**: Explicit consent, privacy policy, minimal data collection
+3. **Fair Work Act 2009 (Cth)**: Employee notification, workplace surveillance compliance
+4. **Metadata-only approach**: Read email subjects, calendar titles, file names — NOT full content
+5. **No content storage**: Process in-memory, discard source data, store only user-approved time entries
+6. **Cross-border disclosure**: Must notify users that AI processing occurs in US
+7. **Australian hosting option**: Offer AU region deployment if required for data sovereignty
+
+Open questions:
+1. Does Thrive require Australian data residency (AU hosting)?
+2. Who are the 1-2 POC pilot users?
+3. Harvest API token available for POC?
+4. Has Thrive notified pilot users about the tool (employee privacy notice)?
+
+Action items:
+1. [Malik] Update codebase to metadata-only approach (no full email/doc content). [This week]
+2. [Malik] Create privacy policy and consent flow for POC. [This week]
+3. [Malik] Document compliance measures in AUSTRALIAN-LEGAL-COMPLIANCE.md. [Done]
+4. [Tariq] Confirm 1-2 pilot user emails. [This week]
+5. [Tariq] Provide Harvest API token + Account ID for POC. [This week]
+6. [Tariq] Send employee privacy notice to pilot users (template provided). [Before POC launch]
+7. [Malik] Launch POC with pilot users once compliance measures implemented. [Next week]
+8. [Tariq] Review POC results and decide on Phase 1 implementation. [~1 week after POC launch]
+
+Impact on plan:
+- POC: GREEN LIGHT — proceeding with 1-2 users, compliance-first approach
+- Phase 1: ON HOLD — pending POC validation and formal SoW approval
+- Compliance: CRITICAL — metadata-only architecture, privacy policy, consent flow, employee notice required before POC launch
+- Timeline: POC this week → validation next week → Phase 1 decision in ~2 weeks
+
+---
+
+## 2026-04-08 (CFO Approval - Phase 1)
+Attendees: Shiv (CFO, Thrive), Malik Amin
+
+Context:
+- CFO Brief sent: C:\Users\Malik\Desktop\Timelogging\CFO-Brief-1-Pager.pdf
+- Email response from Shiv: "We are happy with the quote, lets lock in"
+- Signed NDA received: C:\Users\Malik\Downloads\Thrive _ NDA_Sitara Infotech - signed.pdf
+
+Decisions made:
+1. **Phase 1 Implementation APPROVED**: $5,850 USD locked in
+2. **NDA executed**: Thrive Finance sent signed NDA (Thrive _ NDA_Sitara Infotech - signed.pdf)
+3. **Ready to proceed**: Green light to begin Phase 1 implementation after IT meeting
+4. **Payment structure confirmed**: 50/50 split ($2,925 commencement, $2,925 delivery per SoW v3.0)
+
+Documents:
+- CFO Brief: C:\Users\Malik\Desktop\Timelogging\CFO-Brief-1-Pager.pdf
+- Signed NDA: C:\Users\Malik\Downloads\Thrive _ NDA_Sitara Infotech - signed.pdf
+- SoW v3.0: SOW-Thrive-v3.pdf (referenced in CFO brief)
+
+Action items:
+1. [Malik] IT meeting today (2026-04-08) to gather technical requirements. [Today]
+2. [Thrive Finance] Issue commencement invoice ($2,925 USD). [This week]
+3. [Malik] Begin Phase 1 implementation upon receipt of Harvest API token + pilot user details. [Post IT meeting]
+4. [Malik] Archive signed NDA to project documentation folder. [This week]
+
+Next steps:
+1. IT meeting (today) to confirm:
+   - Harvest API token + Account ID
+   - 1-2 pilot user emails
+   - Google Workspace admin access (mark app as Internal)
+   - Forecast API access status
+2. Launch POC with pilot users
+3. Begin Phase 1 full rollout implementation
+
+Impact on plan:
+- Phase 1: **APPROVED** — $5,850 locked in, NDA signed, ready to implement
+- POC: Proceeding immediately with pilot users
+- Timeline: Implementation begins this week (pending IT requirements)
+- Monthly pricing: $5/user annual or $7.50/user M2M, 50-user minimum (per SoW v3.0)
+- Reporting enhancement: Separate scope, TBC after Phase 1 live

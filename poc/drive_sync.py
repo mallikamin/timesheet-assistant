@@ -91,3 +91,97 @@ def format_files_for_prompt(files: List[Dict], target_date: str = None) -> str:
         lines.append(line)
 
     return "\n".join(lines)
+
+
+def search_files(
+    access_token: str,
+    date_from: str = None,
+    date_to: str = None,
+) -> List[Dict]:
+    """Fetch files modified within a date range (default: today only).
+    Returns list of dicts with: name, type, date, modified_time, mime_type.
+    """
+    if date_from:
+        start = datetime.strptime(date_from, "%Y-%m-%d")
+    else:
+        start = datetime.now()
+    start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if date_to:
+        end = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+    else:
+        end = start + timedelta(days=1)
+
+    mime_filter = " or ".join(f"mimeType='{m}'" for m in MIME_LABELS)
+    query = (
+        f"modifiedTime >= '{start.isoformat()}Z' and "
+        f"modifiedTime < '{end.isoformat()}Z' and "
+        f"({mime_filter}) and "
+        f"'me' in owners"
+    )
+
+    try:
+        resp = httpx.get(
+            f"{DRIVE_API_BASE}/files",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "q": query,
+                "fields": "files(id,name,mimeType,modifiedTime,viewedByMeTime)",
+                "orderBy": "modifiedTime desc",
+                "pageSize": 50,
+            },
+            timeout=15,
+        )
+    except httpx.TimeoutException:
+        print("Drive API timeout")
+        return []
+
+    if resp.status_code != 200:
+        print(f"Drive API error: {resp.status_code} {resp.text}")
+        return []
+
+    raw_files = resp.json().get("files", [])
+    files = []
+
+    for f in raw_files:
+        mime = f.get("mimeType", "")
+        file_type = MIME_LABELS.get(mime, "File")
+        modified = f.get("modifiedTime", "")
+
+        mod_time = ""
+        mod_date = ""
+        if modified:
+            dt = datetime.fromisoformat(modified.replace("Z", "+00:00"))
+            mod_time = dt.strftime("%H:%M")
+            mod_date = dt.strftime("%Y-%m-%d")
+
+        files.append({
+            "name": f.get("name", "Untitled"),
+            "type": file_type,
+            "date": mod_date,
+            "modified_time": mod_time,
+            "mime_type": mime,
+        })
+
+    return files
+
+
+def format_search_results_for_tool(files: List[Dict]) -> str:
+    """Format Drive search results for Claude tool_use response.
+    Truncates at 8000 chars."""
+    if not files:
+        return "No Google Drive activity found for the specified date range."
+
+    lines = [f"Found {len(files)} files modified:"]
+    current_date = None
+    for i, f in enumerate(files, 1):
+        if f.get("date") != current_date:
+            current_date = f.get("date")
+            lines.append(f"\n--- {current_date} ---")
+        line = f"  {i}. [{f['type']}] {f['name']} (edited {f['modified_time']})"
+        lines.append(line)
+
+    result = "\n".join(lines)
+    if len(result) > 8000:
+        result = result[:8000] + "\n... (results truncated)"
+    return result

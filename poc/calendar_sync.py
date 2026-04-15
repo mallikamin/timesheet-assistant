@@ -152,3 +152,106 @@ def format_events_for_prompt(events: List[Dict], target_date: str = None) -> str
         lines.append(line)
 
     return "\n".join(lines)
+
+
+def search_events(
+    access_token: str,
+    date_from: str = None,
+    date_to: str = None,
+) -> List[Dict]:
+    """Fetch calendar events for a date range (default: today only).
+    Returns list of dicts with: summary, date, start, end, duration_hours, attendees, location.
+    """
+    if date_from:
+        start = datetime.strptime(date_from, "%Y-%m-%d")
+    else:
+        start = datetime.now()
+    start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if date_to:
+        # Include the end date by going to start of next day
+        end = datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)
+    else:
+        end = start + timedelta(days=1)
+
+    time_min = start.isoformat() + "Z"
+    time_max = end.isoformat() + "Z"
+
+    try:
+        resp = httpx.get(
+            f"{CALENDAR_API_BASE}/calendars/primary/events",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": 100,
+            },
+            timeout=15,
+        )
+    except httpx.TimeoutException:
+        print("Calendar API timeout")
+        return []
+
+    if resp.status_code != 200:
+        print(f"Calendar API error: {resp.status_code} {resp.text}")
+        return []
+
+    raw_events = resp.json().get("items", [])
+    events = []
+
+    for ev in raw_events:
+        start_raw = ev.get("start", {})
+        end_raw = ev.get("end", {})
+        if "dateTime" not in start_raw:
+            continue
+
+        start_dt = datetime.fromisoformat(start_raw["dateTime"])
+        end_dt = datetime.fromisoformat(end_raw["dateTime"])
+        duration = (end_dt - start_dt).total_seconds() / 3600
+        duration = max(round(duration * 12) / 12, 0.08)
+
+        attendees = ev.get("attendees", [])
+        attendee_names = [
+            a.get("displayName", a.get("email", ""))
+            for a in attendees
+            if not a.get("self", False)
+        ]
+
+        events.append({
+            "summary": ev.get("summary", "No title"),
+            "date": start_dt.strftime("%Y-%m-%d"),
+            "start": start_dt.strftime("%H:%M"),
+            "end": end_dt.strftime("%H:%M"),
+            "duration_hours": round(duration, 2),
+            "attendees": attendee_names,
+            "location": ev.get("location", ""),
+        })
+
+    return events
+
+
+def format_search_results_for_tool(events: List[Dict]) -> str:
+    """Format calendar search results for Claude tool_use response.
+    Groups events by date. Truncates at 8000 chars."""
+    if not events:
+        return "No calendar events found for the specified date range."
+
+    lines = [f"Found {len(events)} calendar events:"]
+    current_date = None
+    for ev in events:
+        if ev.get("date") != current_date:
+            current_date = ev.get("date")
+            lines.append(f"\n--- {current_date} ---")
+        line = f"  {ev['start']}-{ev['end']} ({ev['duration_hours']}h): {ev['summary']}"
+        if ev["attendees"]:
+            line += f" [with: {', '.join(ev['attendees'][:5])}]"
+        if ev.get("location"):
+            line += f" @ {ev['location']}"
+        lines.append(line)
+
+    result = "\n".join(lines)
+    if len(result) > 8000:
+        result = result[:8000] + "\n... (results truncated)"
+    return result
