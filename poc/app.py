@@ -429,6 +429,22 @@ async def logout(request: Request):
     return RedirectResponse(url="/login")
 
 
+@app.get("/demo-login")
+async def demo_login(request: Request):
+    """Quick demo login bypass (REMOVE IN PRODUCTION)"""
+    request.session["user"] = {
+        "email": "tariq@thrive.com",
+        "name": "Tariq Munir",
+        "picture": "",
+    }
+    request.session["google_token"] = {
+        "access_token": "demo_token",
+        "refresh_token": "",
+        "expires_at": 9999999999,
+    }
+    return RedirectResponse(url="/")
+
+
 @app.get("/auth/harvest")
 async def auth_harvest(request: Request):
     """Initiate Harvest OAuth flow."""
@@ -476,9 +492,9 @@ async def home(request: Request):
     if not user:
         return RedirectResponse(url="/login")
     return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
+        "index.html",
+        {
+            "request": request,
             "user": user,
             "users": PILOT_USERS,
             "today": date.today().strftime("%A, %d/%m/%Y"),
