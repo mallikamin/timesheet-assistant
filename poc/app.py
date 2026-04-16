@@ -43,6 +43,21 @@ app.add_middleware(
 )
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Seed demo tasks on startup (only if table is empty)
+@app.on_event("startup")
+async def startup_event():
+    """Seed demo tasks if the tasks table is empty."""
+    try:
+        existing = tasks.get_all_tasks()
+        if len(existing) == 0:
+            tasks.seed_tasks()
+            print(f"✓ Seeded {len(tasks.get_all_tasks())} demo tasks")
+        else:
+            print(f"✓ Tasks table already has {len(existing)} tasks (skipping seed)")
+    except Exception as e:
+        # Log but don't crash — task module may not be ready yet
+        print(f"⚠️  Startup seed check failed: {e}")
+
 # Google OAuth
 oauth = OAuth()
 oauth.register(
@@ -375,7 +390,7 @@ async def login_page(request: Request):
     user = get_current_user(request)
     if user:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse(request=request, name="login.html")
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
 @app.get("/auth/google")

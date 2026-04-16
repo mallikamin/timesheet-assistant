@@ -8,19 +8,38 @@ import os
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
+from pathlib import Path
 
 from supabase import create_client
+from dotenv import load_dotenv
+
+# Load environment variables
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 _client = None
+_in_memory_tasks = {}  # Fallback for demo when Supabase table doesn't exist
+_use_memory = False  # Flag to switch to in-memory mode
+_supabase_available = True  # Track if Supabase is available
 
 
 def _get_client():
-    global _client
-    if _client is None:
-        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    """Get Supabase client (or None if unavailable)."""
+    global _client, _supabase_available
+    if _client is None and _supabase_available:
+        try:
+            if not SUPABASE_URL or not SUPABASE_KEY:
+                print("⚠️  Supabase credentials missing, using in-memory storage")
+                _supabase_available = False
+                return None
+            _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        except Exception as e:
+            print(f"⚠️  Supabase connection failed: {e}")
+            _supabase_available = False
+            return None
     return _client
 
 
@@ -60,17 +79,33 @@ def create_task(
         "created_at": datetime.now().isoformat(),
         "hours_logged": 0.0,
     }
-    try:
-        sb = _get_client()
-        result = sb.table("tasks").insert(task).execute()
-        return result.data[0] if result.data else task
-    except Exception as e:
-        print(f"create_task error: {e}")
-        return task
+    global _use_memory, _in_memory_tasks
+
+    sb = _get_client()
+    if sb:
+        try:
+            result = sb.table("tasks").insert(task).execute()
+            return result.data[0] if result.data else task
+        except Exception as e:
+            # Table might not exist yet — log and fall back
+            if not _use_memory:
+                print(f"⚠️  Supabase insert failed (falling back to in-memory): {e}")
+                _use_memory = True
+
+    # In-memory fallback
+    _in_memory_tasks[task["id"]] = task
+    if _use_memory and len(_in_memory_tasks) == 1:
+        print("✓ Using in-memory task storage (Supabase table not ready)")
+    return task
 
 
 def get_task(task_id: str) -> Optional[Dict]:
     """Get a single task by ID."""
+    global _use_memory, _in_memory_tasks
+
+    if _use_memory:
+        return _in_memory_tasks.get(task_id)
+
     try:
         sb = _get_client()
         result = sb.table("tasks").select("*").eq("id", task_id).execute()
@@ -82,13 +117,29 @@ def get_task(task_id: str) -> Optional[Dict]:
 
 def get_all_tasks(project: str = None, assignee: str = None, status: str = None) -> List[Dict]:
     """Get tasks, optionally filtered."""
+    global _use_memory, _in_memory_tasks
+
+    # Use in-memory storage if enabled
+    if _use_memory:
+        tasks = list(_in_memory_tasks.values())
+        # Apply filters
+        if project:
+            tasks = [t for t in tasks if t.get("project") == project]
+        if assignee:
+            tasks = [t for t in tasks if assignee in t.get("assignees", [])]
+        if status:
+            tasks = [t for t in tasks if t.get("status") == status]
+        # Sort by created_at
+        tasks.sort(key=lambda t: t.get("created_at", ""))
+        return tasks
+
     try:
         sb = _get_client()
         query = sb.table("tasks").select("*")
         if project:
             query = query.eq("project", project)
         if assignee:
-            query = query.eq("assignee", assignee)
+            query = query.contains("assignees", [assignee])
         if status:
             query = query.eq("status", status)
         query = query.order("created_at", desc=False)
@@ -101,6 +152,14 @@ def get_all_tasks(project: str = None, assignee: str = None, status: str = None)
 
 def update_task(task_id: str, **kwargs) -> Optional[Dict]:
     """Update a task by ID."""
+    global _use_memory, _in_memory_tasks
+
+    if _use_memory:
+        if task_id in _in_memory_tasks:
+            _in_memory_tasks[task_id].update(kwargs)
+            return _in_memory_tasks[task_id]
+        return None
+
     try:
         sb = _get_client()
         result = sb.table("tasks").update(kwargs).eq("id", task_id).execute()
@@ -112,6 +171,14 @@ def update_task(task_id: str, **kwargs) -> Optional[Dict]:
 
 def delete_task(task_id: str) -> bool:
     """Delete a task by ID."""
+    global _use_memory, _in_memory_tasks
+
+    if _use_memory:
+        if task_id in _in_memory_tasks:
+            del _in_memory_tasks[task_id]
+            return True
+        return False
+
     try:
         sb = _get_client()
         result = sb.table("tasks").delete().eq("id", task_id).execute()
@@ -341,7 +408,7 @@ def seed_tasks():
     for task_data in tasks_data:
         create_task(**task_data)
 
-    print(f"✅ Seeded {len(tasks_data)} demo tasks with attachments, notes, subtasks, and multiple assignees")
+    print(f"Seeded {len(tasks_data)} demo tasks with attachments, notes, subtasks, and multiple assignees")
 
 
 if __name__ == "__main__":

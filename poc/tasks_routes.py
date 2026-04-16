@@ -6,7 +6,7 @@ Endpoints for task CRUD, filtering, and sync prompts.
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import tasks
+import tasks  # Phase 2 task management module
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -16,24 +16,30 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 class TaskCreate(BaseModel):
     title: str
     project: str
-    assignee: str
+    assignees: List[str] = []  # Multiple assignees now (Phase 2 enhancement)
     status: str = "To Do"
     priority: str = "Medium"
     due_date: Optional[str] = None
     budget: float = 0.0
     description: str = ""
+    notes: str = ""  # Added in Phase 2
+    attachments: List[dict] = []  # [{name: "file.pdf", url: "..."}, ...]
+    subtasks: List[dict] = []  # [{title: "Subtask 1", done: False}, ...]
     created_by: str = "System"
 
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     project: Optional[str] = None
-    assignee: Optional[str] = None
+    assignees: Optional[List[str]] = None  # Multiple assignees
     status: Optional[str] = None
     priority: Optional[str] = None
     due_date: Optional[str] = None
     budget: Optional[float] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
+    attachments: Optional[List[dict]] = None
+    subtasks: Optional[List[dict]] = None
     hours_logged: Optional[float] = None
 
 
@@ -64,12 +70,15 @@ async def create_task(body: TaskCreate):
     task = tasks.create_task(
         title=body.title,
         project=body.project,
-        assignee=body.assignee,
+        assignees=body.assignees,  # Fixed: now supports multiple assignees
         status=body.status,
         priority=body.priority,
         due_date=body.due_date,
         budget=body.budget,
         description=body.description,
+        notes=body.notes,
+        attachments=body.attachments,
+        subtasks=body.subtasks,
         created_by=body.created_by,
     )
     return task
