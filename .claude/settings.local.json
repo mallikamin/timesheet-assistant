@@ -56,7 +56,12 @@
       "Bash(ls:*)",
       "Bash(pip show:*)",
       "Bash(dir:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(netstat:*)",
+      "Bash(tasklist:*)",
+      "Bash(cat:*)"
     ]
   }
 }

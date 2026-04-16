@@ -32,12 +32,12 @@ def _get_client():
     if _client is None and _supabase_available:
         try:
             if not SUPABASE_URL or not SUPABASE_KEY:
-                print("⚠️  Supabase credentials missing, using in-memory storage")
+                print("[WARN] Supabase credentials missing, using in-memory storage")
                 _supabase_available = False
                 return None
             _client = create_client(SUPABASE_URL, SUPABASE_KEY)
         except Exception as e:
-            print(f"⚠️  Supabase connection failed: {e}")
+            print(f"[WARN] Supabase connection failed: {e}")
             _supabase_available = False
             return None
     return _client
@@ -89,13 +89,13 @@ def create_task(
         except Exception as e:
             # Table might not exist yet — log and fall back
             if not _use_memory:
-                print(f"⚠️  Supabase insert failed (falling back to in-memory): {e}")
+                print(f"[WARN] Supabase insert failed (falling back to in-memory): {e}")
                 _use_memory = True
 
     # In-memory fallback
     _in_memory_tasks[task["id"]] = task
     if _use_memory and len(_in_memory_tasks) == 1:
-        print("✓ Using in-memory task storage (Supabase table not ready)")
+        print("[OK] Using in-memory task storage (Supabase table not ready)")
     return task
 
 

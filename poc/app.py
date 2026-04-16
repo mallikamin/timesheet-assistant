@@ -51,12 +51,12 @@ async def startup_event():
         existing = tasks.get_all_tasks()
         if len(existing) == 0:
             tasks.seed_tasks()
-            print(f"✓ Seeded {len(tasks.get_all_tasks())} demo tasks")
+            print(f"[OK] Seeded {len(tasks.get_all_tasks())} demo tasks")
         else:
-            print(f"✓ Tasks table already has {len(existing)} tasks (skipping seed)")
+            print(f"[OK] Tasks table already has {len(existing)} tasks (skipping seed)")
     except Exception as e:
         # Log but don't crash — task module may not be ready yet
-        print(f"⚠️  Startup seed check failed: {e}")
+        print(f"[WARN] Startup seed check failed: {e}")
 
 # Google OAuth
 oauth = OAuth()
