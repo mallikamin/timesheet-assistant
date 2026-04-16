@@ -61,7 +61,8 @@
       "Bash(lsof:*)",
       "Bash(netstat:*)",
       "Bash(tasklist:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

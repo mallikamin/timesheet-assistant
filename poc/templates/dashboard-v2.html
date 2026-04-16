@@ -564,8 +564,11 @@
             <div class="logo">THRIVE</div>
             <div class="header-title">Task Management</div>
         </div>
-        <div class="user-section">
-            <div class="user-avatar">MA</div>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <a href="/" style="text-decoration: none; padding: 8px 16px; background: #F4A623; color: #1a1a2e; border-radius: 6px; font-size: 14px; font-weight: 600;">⏰ Timesheet App</a>
+            <div class="user-section">
+                <div class="user-avatar">MA</div>
+            </div>
         </div>
     </div>
 
@@ -622,22 +625,32 @@
 
         <!-- TIMELINE VIEW -->
         <div id="timeline-view" class="view-content">
-            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
-                Timeline view coming soon...
+            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600; color: #1D1D1F;">Project Timeline</h3>
+                <div id="timeline-gantt" style="overflow-x: auto; min-height: 400px;"></div>
             </div>
         </div>
 
         <!-- CALENDAR VIEW -->
         <div id="calendar-view" class="view-content">
-            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
-                Calendar view coming soon...
+            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: #1D1D1F;">Task Calendar</h3>
+                    <div style="display: flex; gap: 12px;">
+                        <button onclick="changeMonth(-1)" style="padding: 6px 12px; border: 1px solid #E0E0E0; background: white; border-radius: 6px; cursor: pointer;">←</button>
+                        <span id="calendar-month" style="min-width: 150px; text-align: center; font-weight: 600; line-height: 32px;"></span>
+                        <button onclick="changeMonth(1)" style="padding: 6px 12px; border: 1px solid #E0E0E0; background: white; border-radius: 6px; cursor: pointer;">→</button>
+                    </div>
+                </div>
+                <div id="calendar-grid"></div>
             </div>
         </div>
 
         <!-- NOTIFICATIONS VIEW -->
         <div id="notifications-view" class="view-content">
-            <div style="background: white; border-radius: 8px; padding: 20px; text-align: center; color: #C4C4C4;">
-                Notifications coming soon...
+            <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600; color: #1D1D1F;">Activity & Alerts</h3>
+                <div id="notifications-list"></div>
             </div>
         </div>
     </div>
@@ -772,6 +785,9 @@
         function initDashboard() {
             renderTableView();
             renderKanbanView();
+            renderTimelineView();
+            renderCalendarView();
+            renderNotificationsView();
             checkAISyncPrompt();
         }
 
@@ -780,6 +796,11 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById(viewName + '-view').classList.add('active');
             event.target.classList.add('active');
+
+            // Re-render view-specific content when switching
+            if (viewName === 'timeline') renderTimelineView();
+            if (viewName === 'calendar') renderCalendarView();
+            if (viewName === 'notifications') renderNotificationsView();
         }
 
         function renderTableView() {
@@ -977,6 +998,235 @@
                 document.getElementById('ai-prompt-text').textContent = `🤖 You were assigned '${task.title}' by ${task.due_date}, but no progress yet. Have you started?`;
                 document.getElementById('ai-prompt').classList.add('show');
             }
+        }
+
+        // === TIMELINE VIEW (Gantt Chart) ===
+        function renderTimelineView() {
+            const container = document.getElementById('timeline-gantt');
+            if (!allTasks.length) {
+                container.innerHTML = '<p style="text-align: center; color: #C4C4C4; padding: 40px;">No tasks to display</p>';
+                return;
+            }
+
+            // Get date range
+            const today = new Date();
+            const dates = allTasks.map(t => new Date(t.due_date));
+            const minDate = new Date(Math.min(...dates, today));
+            const maxDate = new Date(Math.max(...dates, today));
+            minDate.setDate(minDate.getDate() - 2);
+            maxDate.setDate(maxDate.getDate() + 2);
+
+            const daysDiff = Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24));
+            const dateHeaders = [];
+            for (let i = 0; i <= daysDiff; i++) {
+                const d = new Date(minDate);
+                d.setDate(d.getDate() + i);
+                dateHeaders.push(d);
+            }
+
+            let html = '<div style="display: flex; flex-direction: column; min-width: max-content;">';
+
+            // Header row (dates)
+            html += '<div style="display: flex; border-bottom: 2px solid #E0E0E0; padding-bottom: 8px; margin-bottom: 8px; position: sticky; top: 0; background: white; z-index: 10;">';
+            html += '<div style="width: 200px; flex-shrink: 0; font-weight: 600; padding: 8px;">Task</div>';
+            dateHeaders.forEach(d => {
+                const isToday = d.toDateString() === today.toDateString();
+                html += `<div style="width: 40px; text-align: center; font-size: 11px; ${isToday ? 'background: #FFF4E6; font-weight: 600;' : ''}">
+                    <div>${d.toLocaleDateString('en-AU', {day: '2-digit'})}</div>
+                    <div style="color: #999;">${d.toLocaleDateString('en-AU', {month: 'short'})}</div>
+                </div>`;
+            });
+            html += '</div>';
+
+            // Task rows
+            allTasks.forEach(task => {
+                const taskDate = new Date(task.due_date);
+                const daysFromStart = Math.ceil((taskDate - minDate) / (1000 * 60 * 60 * 24));
+                const barStart = Math.max(0, daysFromStart - 3) * 40;
+                const barWidth = 4 * 40;
+
+                const statusColors = {
+                    'To Do': '#E0E0E0',
+                    'Working': '#F4A623',
+                    'Review': '#4A90E2',
+                    'Done': '#6FCF97'
+                };
+
+                html += '<div style="display: flex; align-items: center; padding: 4px 0; border-bottom: 1px solid #F5F5F5; position: relative;">';
+                html += `<div style="width: 200px; flex-shrink: 0; padding: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${task.title}">${task.title}</div>`;
+                html += `<div style="width: ${daysDiff * 40}px; position: relative; height: 32px;">`;
+                html += `<div style="position: absolute; left: ${barStart}px; width: ${barWidth}px; height: 20px; background: ${statusColors[task.status]}; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: ${task.status === 'To Do' ? '#666' : 'white'}; font-weight: 500;">
+                    ${task.status}
+                </div>`;
+                html += '</div></div>';
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // === CALENDAR VIEW ===
+        let currentCalendarMonth = new Date();
+
+        function renderCalendarView() {
+            const year = currentCalendarMonth.getFullYear();
+            const month = currentCalendarMonth.getMonth();
+
+            document.getElementById('calendar-month').textContent =
+                currentCalendarMonth.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const startDay = firstDay.getDay();
+            const daysInMonth = lastDay.getDate();
+
+            let html = '<div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #E0E0E0; border: 1px solid #E0E0E0; border-radius: 8px; overflow: hidden;">';
+
+            // Day headers
+            ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
+                html += `<div style="background: #F8F8F8; padding: 12px; text-align: center; font-weight: 600; font-size: 13px; color: #676879;">${day}</div>`;
+            });
+
+            // Empty cells before first day
+            for (let i = 0; i < startDay; i++) {
+                html += '<div style="background: #FAFAFA; min-height: 100px;"></div>';
+            }
+
+            // Calendar days
+            const today = new Date();
+            for (let day = 1; day <= daysInMonth; day++) {
+                const currentDate = new Date(year, month, day);
+                const dateStr = currentDate.toISOString().split('T')[0];
+                const dayTasks = allTasks.filter(t => t.due_date === dateStr);
+                const isToday = currentDate.toDateString() === today.toDateString();
+
+                html += `<div style="background: white; padding: 8px; min-height: 100px; ${isToday ? 'border: 2px solid #F4A623;' : ''} position: relative;">`;
+                html += `<div style="font-weight: ${isToday ? '700' : '500'}; font-size: 14px; margin-bottom: 6px; ${isToday ? 'color: #F4A623;' : 'color: #1D1D1F;'}">${day}</div>`;
+
+                dayTasks.forEach(task => {
+                    const statusColors = {
+                        'To Do': '#E0E0E0',
+                        'Working': '#F4A623',
+                        'Review': '#4A90E2',
+                        'Done': '#6FCF97'
+                    };
+                    html += `<div style="background: ${statusColors[task.status]}; color: ${task.status === 'To Do' ? '#666' : 'white'}; padding: 4px 6px; border-radius: 4px; font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;" onclick="openEditModal('${task.id}')" title="${task.title}">
+                        ${task.title}
+                    </div>`;
+                });
+
+                html += '</div>';
+            }
+
+            html += '</div>';
+            document.getElementById('calendar-grid').innerHTML = html;
+        }
+
+        function changeMonth(delta) {
+            currentCalendarMonth.setMonth(currentCalendarMonth.getMonth() + delta);
+            renderCalendarView();
+        }
+
+        // === NOTIFICATIONS VIEW ===
+        function renderNotificationsView() {
+            const container = document.getElementById('notifications-list');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const overdue = allTasks.filter(t => {
+                const due = new Date(t.due_date);
+                due.setHours(0, 0, 0, 0);
+                return due < today && t.status !== 'Done';
+            });
+
+            const dueToday = allTasks.filter(t => {
+                const due = new Date(t.due_date);
+                due.setHours(0, 0, 0, 0);
+                return due.getTime() === today.getTime() && t.status !== 'Done';
+            });
+
+            const upcoming = allTasks.filter(t => {
+                const due = new Date(t.due_date);
+                due.setHours(0, 0, 0, 0);
+                const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+                return diff > 0 && diff <= 7 && t.status !== 'Done';
+            });
+
+            const completed = allTasks.filter(t => t.status === 'Done');
+
+            let html = '';
+
+            // Overdue section
+            if (overdue.length > 0) {
+                html += `<div style="margin-bottom: 24px;">
+                    <h4 style="color: #E74C3C; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #E74C3C; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px;">${overdue.length}</span>
+                        Overdue Tasks
+                    </h4>`;
+                overdue.forEach(task => {
+                    const daysOverdue = Math.ceil((today - new Date(task.due_date)) / (1000 * 60 * 60 * 24));
+                    html += `<div style="background: #FFF5F5; border-left: 4px solid #E74C3C; padding: 12px; margin-bottom: 8px; border-radius: 4px; cursor: pointer;" onclick="openEditModal('${task.id}')">
+                        <div style="font-weight: 600; margin-bottom: 4px;">${task.title}</div>
+                        <div style="font-size: 12px; color: #E74C3C;">${daysOverdue} day${daysOverdue > 1 ? 's' : ''} overdue • ${task.assignees.join(', ')}</div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            // Due today section
+            if (dueToday.length > 0) {
+                html += `<div style="margin-bottom: 24px;">
+                    <h4 style="color: #F4A623; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #F4A623; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px;">${dueToday.length}</span>
+                        Due Today
+                    </h4>`;
+                dueToday.forEach(task => {
+                    html += `<div style="background: #FFF9F0; border-left: 4px solid #F4A623; padding: 12px; margin-bottom: 8px; border-radius: 4px; cursor: pointer;" onclick="openEditModal('${task.id}')">
+                        <div style="font-weight: 600; margin-bottom: 4px;">${task.title}</div>
+                        <div style="font-size: 12px; color: #F4A623;">${task.status} • ${task.assignees.join(', ')}</div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            // Upcoming section
+            if (upcoming.length > 0) {
+                html += `<div style="margin-bottom: 24px;">
+                    <h4 style="color: #4A90E2; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #4A90E2; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px;">${upcoming.length}</span>
+                        Due This Week
+                    </h4>`;
+                upcoming.forEach(task => {
+                    const daysUntil = Math.ceil((new Date(task.due_date) - today) / (1000 * 60 * 60 * 24));
+                    html += `<div style="background: #F0F7FF; border-left: 4px solid #4A90E2; padding: 12px; margin-bottom: 8px; border-radius: 4px; cursor: pointer;" onclick="openEditModal('${task.id}')">
+                        <div style="font-weight: 600; margin-bottom: 4px;">${task.title}</div>
+                        <div style="font-size: 12px; color: #4A90E2;">Due in ${daysUntil} day${daysUntil > 1 ? 's' : ''} • ${task.assignees.join(', ')}</div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            // Completed section
+            if (completed.length > 0) {
+                html += `<div>
+                    <h4 style="color: #6FCF97; font-size: 14px; font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #6FCF97; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px;">✓</span>
+                        Recently Completed
+                    </h4>`;
+                completed.slice(0, 5).forEach(task => {
+                    html += `<div style="background: #F0FFF4; border-left: 4px solid #6FCF97; padding: 12px; margin-bottom: 8px; border-radius: 4px; opacity: 0.8; cursor: pointer;" onclick="openEditModal('${task.id}')">
+                        <div style="font-weight: 600; margin-bottom: 4px;">${task.title}</div>
+                        <div style="font-size: 12px; color: #6FCF97;">${task.assignees.join(', ')}</div>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+
+            if (!overdue.length && !dueToday.length && !upcoming.length && !completed.length) {
+                html = '<p style="text-align: center; color: #C4C4C4; padding: 40px;">No notifications</p>';
+            }
+
+            container.innerHTML = html;
         }
 
         window.addEventListener('DOMContentLoaded', initDashboard);

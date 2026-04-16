@@ -1,0 +1,52 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\Malik\\desktop\\timelogging\\poc']
+INFO:     Uvicorn running on http://127.0.0.1:5000 (Press CTRL+C to quit)
+INFO:     Started reloader process [3296] using WatchFiles
+INFO:     Started server process [32280]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[OK] Tasks table already has 8 tasks (skipping seed)
+INFO:     127.0.0.1:53479 - "GET /demo-login HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:63332 - "HEAD /demo-login HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:53333 - "GET /demo-login HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:53333 - "GET / HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:53333 - "GET /login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60289 - "GET /demo-login HTTP/1.1" 307 Temporary Redirect
+INFO:     127.0.0.1:60289 - "GET / HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\uvicorn\protocols\http\httptools_impl.py", line 426, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\uvicorn\middleware\proxy_headers.py", line 84, in __call__
+    return await self.app(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\fastapi\applications.py", line 1106, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\applications.py", line 122, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\middleware\errors.py", line 184, in __call__
+    raise exc
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\middleware\errors.py", line 162, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\middleware\sessions.py", line 86, in __call__
+    await self.app(scope, receive, send_wrapper)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\middleware\exceptions.py", line 79, in __call__
+    raise exc
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\middleware\exceptions.py", line 68, in __call__
+    await self.app(scope, receive, sender)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 20, in __call__
+    raise e
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 17, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\routing.py", line 718, in __call__
+    await route.handle(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\starlette\routing.py", line 66, in app
+    response = await func(request)
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\fastapi\routing.py", line 274, in app
+    raw_response = await run_endpoint_function(
+  File "C:\Users\Malik\AppData\Local\Programs\Python\Python39\lib\site-packages\fastapi\routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+  File "C:\Users\Malik\desktop\timelogging\poc\app.py", line 494, in home
+    return templates.TemplateResponse(
+TypeError: TemplateResponse() got an unexpected keyword argument 'request'
+WARNING:  WatchFiles detected changes in 'app.py'. Reloading...
