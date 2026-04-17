@@ -810,6 +810,7 @@ async def approve_entry(entry_id: str, request: Request):
         return {"success": False, "error": "Already approved"}
 
     # Push to Harvest
+    print(f"Approve entry {entry_id}: client='{entry.get('client')}' project_code='{entry.get('project_code')}' task='{entry.get('project_name', entry.get('task'))}'")
     user_email = user.get("email", "")
     harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
 

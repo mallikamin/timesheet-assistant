@@ -751,7 +751,7 @@ What have you been up to?</div>
                 if (!isApproved) {
                     actionsHtml = `
                         <div class="entry-actions">
-                            <button class="btn-approve" onclick="approveEntry('${entry.id}')">Approve &rarr; Harvest</button>
+                            <button class="btn-approve" id="approve-${entry.id}" onclick="approveEntry('${entry.id}')">Approve &rarr; Harvest</button>
                             <button class="btn-edit-entry" onclick="editEntry('${entry.id}', this)">Edit</button>
                         </div>
                     `;
@@ -967,6 +967,11 @@ What have you been up to?</div>
     // --- Approval Functions ---
 
     async function approveEntry(entryId) {
+        const btn = document.getElementById(`approve-${entryId}`);
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Pushing to Harvest...';
+        }
         try {
             const res = await fetch(`/api/entries/${entryId}/approve`, { method: 'POST' });
             const data = await res.json();
@@ -975,10 +980,12 @@ What have you been up to?</div>
                 refreshEntries();
             } else {
                 addSystemMessage(`Approval failed: ${data.error || 'Unknown error'}`);
+                if (btn) { btn.disabled = false; btn.textContent = 'Approve \u2192 Harvest'; }
             }
         } catch (err) {
             console.error('Failed to approve entry:', err);
             addSystemMessage('Failed to approve entry. Please try again.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Approve \u2192 Harvest'; }
         }
     }
 
