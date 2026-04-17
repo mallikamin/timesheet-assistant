@@ -691,15 +691,37 @@ async def approve_all_entries(request: Request):
     results = []
     for entry in drafts:
         harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
-        harvest_entry = harvest_api.push_entry(
-            client_name=entry.get("client", ""),
-            task_name=entry.get("project_name", entry.get("task", "")),
-            spent_date=entry.get("date", date.today().isoformat()),
-            hours=float(entry.get("hours", 0)),
-            notes=entry.get("notes", ""),
-            user_id=harvest_user_id,
-            access_token=harvest_access_token,
-        )
+
+        # Try direct IDs from project_code first (format: "projectId-taskId")
+        harvest_entry = None
+        project_code = entry.get("project_code", "")
+        if project_code and "-" in project_code:
+            parts = project_code.split("-", 1)
+            try:
+                pid, tid = int(parts[0]), int(parts[1])
+                harvest_entry = harvest_api.create_time_entry(
+                    project_id=pid,
+                    task_id=tid,
+                    spent_date=entry.get("date", date.today().isoformat()),
+                    hours=float(entry.get("hours", 0)),
+                    notes=entry.get("notes", ""),
+                    user_id=harvest_user_id,
+                    access_token=harvest_access_token,
+                )
+            except (ValueError, TypeError):
+                pass
+
+        # Fallback to name resolution
+        if not harvest_entry:
+            harvest_entry = harvest_api.push_entry(
+                client_name=entry.get("client", ""),
+                task_name=entry.get("project_name", entry.get("task", "")),
+                spent_date=entry.get("date", date.today().isoformat()),
+                hours=float(entry.get("hours", 0)),
+                notes=entry.get("notes", ""),
+                user_id=harvest_user_id,
+                access_token=harvest_access_token,
+            )
 
         if harvest_entry:
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
@@ -790,15 +812,37 @@ async def approve_entry(entry_id: str, request: Request):
     # Push to Harvest
     user_email = user.get("email", "")
     harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
-    harvest_entry = harvest_api.push_entry(
-        client_name=entry.get("client", ""),
-        task_name=entry.get("project_name", entry.get("task", "")),
-        spent_date=entry.get("date", date.today().isoformat()),
-        hours=float(entry.get("hours", 0)),
-        notes=entry.get("notes", ""),
-        user_id=harvest_user_id,
-        access_token=harvest_access_token,
-    )
+
+    # Try direct IDs from project_code first (format: "projectId-taskId")
+    harvest_entry = None
+    project_code = entry.get("project_code", "")
+    if project_code and "-" in project_code:
+        parts = project_code.split("-", 1)
+        try:
+            pid, tid = int(parts[0]), int(parts[1])
+            harvest_entry = harvest_api.create_time_entry(
+                project_id=pid,
+                task_id=tid,
+                spent_date=entry.get("date", date.today().isoformat()),
+                hours=float(entry.get("hours", 0)),
+                notes=entry.get("notes", ""),
+                user_id=harvest_user_id,
+                access_token=harvest_access_token,
+            )
+        except (ValueError, TypeError):
+            pass  # Not numeric IDs, fall through to name resolution
+
+    # Fallback to name resolution
+    if not harvest_entry:
+        harvest_entry = harvest_api.push_entry(
+            client_name=entry.get("client", ""),
+            task_name=entry.get("project_name", entry.get("task", "")),
+            spent_date=entry.get("date", date.today().isoformat()),
+            hours=float(entry.get("hours", 0)),
+            notes=entry.get("notes", ""),
+            user_id=harvest_user_id,
+            access_token=harvest_access_token,
+        )
 
     if not harvest_entry:
         return {"success": False, "error": "Failed to push to Harvest"}
