@@ -29,8 +29,6 @@ import harvest_api
 import harvest_mock
 import harvest_oauth
 import sheets_sync
-import tasks
-import tasks_routes
 from project_mapping import get_all_projects_for_prompt
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,21 +40,6 @@ app.add_middleware(
     secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
 )
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-# Seed demo tasks on startup (only if table is empty)
-@app.on_event("startup")
-async def startup_event():
-    """Seed demo tasks if the tasks table is empty."""
-    try:
-        existing = tasks.get_all_tasks()
-        if len(existing) == 0:
-            tasks.seed_tasks()
-            print(f"[OK] Seeded {len(tasks.get_all_tasks())} demo tasks")
-        else:
-            print(f"[OK] Tasks table already has {len(existing)} tasks (skipping seed)")
-    except Exception as e:
-        # Log but don't crash — task module may not be ready yet
-        print(f"[WARN] Startup seed check failed: {e}")
 
 # Google OAuth
 oauth = OAuth()
@@ -1064,23 +1047,6 @@ async def get_me(request: Request):
     has_calendar = bool(request.session.get("google_token", {}).get("access_token"))
     has_harvest = bool(request.session.get("harvest_token", {}).get("access_token"))
     return {"authenticated": True, "has_calendar": has_calendar, "has_harvest": has_harvest, **user}
-
-
-# --- Task Management Dashboard (Phase 2) ---
-
-@app.get("/dashboard")
-async def dashboard(request: Request):
-    """Task Management Dashboard with 5 views (Table, Kanban, Timeline, Calendar, Notifications).
-    Enhanced with: Multiple assignees, attachments, notes, subtasks, lean Monday.com UX.
-    """
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse(url="/login")
-    return templates.TemplateResponse("dashboard-v2.html", {"request": request, "user": user})
-
-
-# Include tasks API routes
-app.include_router(tasks_routes.router)
 
 
 if __name__ == "__main__":
