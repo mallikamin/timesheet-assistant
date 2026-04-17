@@ -77,7 +77,10 @@ oauth.register(
     client_secret=os.getenv("HARVEST_CLIENT_SECRET", ""),
     access_token_url="https://id.getharvest.com/api/v2/oauth2/token",
     authorize_url="https://id.getharvest.com/oauth2/authorize",
-    client_kwargs={},
+    client_kwargs={
+        # Harvest expects client credentials in token POST body.
+        "token_endpoint_auth_method": "client_secret_post",
+    },
 )
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -452,7 +455,15 @@ async def auth_harvest(request: Request):
     if not user:
         return RedirectResponse(url="/login")
 
-    redirect_uri = request.url_for("auth_harvest_callback")
+    harvest_client_id = os.getenv("HARVEST_CLIENT_ID", "")
+    harvest_client_secret = os.getenv("HARVEST_CLIENT_SECRET", "")
+    if not harvest_client_id or not harvest_client_secret:
+        print(
+            "Harvest OAuth config missing: HARVEST_CLIENT_ID or HARVEST_CLIENT_SECRET not set."
+        )
+        return RedirectResponse(url="/?harvest_error=missing_oauth_config")
+
+    redirect_uri = str(request.url_for("auth_harvest_callback"))
     return await oauth.harvest.authorize_redirect(request, redirect_uri)
 
 
@@ -460,7 +471,10 @@ async def auth_harvest(request: Request):
 async def auth_harvest_callback(request: Request):
     """Handle Harvest OAuth callback."""
     try:
-        token = await oauth.harvest.authorize_access_token(request)
+        redirect_uri = str(request.url_for("auth_harvest_callback"))
+        token = await oauth.harvest.authorize_access_token(
+            request, redirect_uri=redirect_uri
+        )
 
         # Store Harvest OAuth tokens in session
         request.session["harvest_token"] = {
@@ -472,7 +486,11 @@ async def auth_harvest_callback(request: Request):
         # Success - redirect to dashboard
         return RedirectResponse(url="/")
     except Exception as e:
-        print(f"Harvest OAuth error: {e}")
+        print(
+            f"Harvest OAuth error: {e}. "
+            f"client_id_set={bool(os.getenv('HARVEST_CLIENT_ID', ''))} "
+            f"client_secret_set={bool(os.getenv('HARVEST_CLIENT_SECRET', ''))}"
+        )
         return RedirectResponse(url="/?harvest_error=auth_failed")
 
 
