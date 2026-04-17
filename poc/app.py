@@ -471,10 +471,7 @@ async def auth_harvest(request: Request):
 async def auth_harvest_callback(request: Request):
     """Handle Harvest OAuth callback."""
     try:
-        redirect_uri = str(request.url_for("auth_harvest_callback"))
-        token = await oauth.harvest.authorize_access_token(
-            request, redirect_uri=redirect_uri
-        )
+        token = await oauth.harvest.authorize_access_token(request)
 
         # Store Harvest OAuth tokens in session
         request.session["harvest_token"] = {
