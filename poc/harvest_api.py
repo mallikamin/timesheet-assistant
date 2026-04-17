@@ -162,6 +162,45 @@ def resolve_ids(project_name: str, task_name: str, access_token: str = None) -> 
     return None
 
 
+def get_task_assignments(project_id: int, access_token: str = None) -> List[Dict]:
+    """Fetch active task assignments for a specific project."""
+    try:
+        resp = httpx.get(
+            f"{HARVEST_BASE}/projects/{project_id}/task_assignments",
+            headers=_headers(access_token),
+            params={"is_active": "true"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("task_assignments", [])
+        return []
+    except Exception as e:
+        print(f"Harvest get_task_assignments error: {e}")
+        return []
+
+
+def find_task_in_project(project_id: int, task_name: str, access_token: str = None) -> Optional[int]:
+    """Find a task ID by name within a project's task assignments."""
+    assignments = get_task_assignments(project_id, access_token)
+    task_name_lower = task_name.lower()
+
+    # Exact match first
+    for ta in assignments:
+        if ta["task"]["name"].lower() == task_name_lower:
+            return ta["task"]["id"]
+
+    # Partial match: task name contained in search or vice versa
+    for ta in assignments:
+        harvest_name = ta["task"]["name"].lower()
+        if harvest_name in task_name_lower or task_name_lower in harvest_name:
+            return ta["task"]["id"]
+
+    # Log available tasks for debugging
+    available = [ta["task"]["name"] for ta in assignments]
+    print(f"Harvest: task '{task_name}' not found in project {project_id}. Available: {available}")
+    return None
+
+
 def create_time_entry(
     project_id: int,
     task_id: int,
@@ -170,9 +209,11 @@ def create_time_entry(
     notes: str = "",
     user_id: int = None,
     access_token: str = None,
+    task_name: str = None,
 ) -> Optional[Dict]:
     """Create a time entry in Harvest.
     Returns the Harvest entry dict with id, or None on failure.
+    If task_name is provided and the initial task_id fails, retries by looking up the correct task.
     """
     if not is_configured() and not access_token:
         return None
@@ -197,9 +238,29 @@ def create_time_entry(
             entry = resp.json()
             print(f"Harvest entry created: ID {entry['id']}")
             return entry
-        else:
-            print(f"Harvest create error: {resp.status_code} {resp.text[:200]}")
-            return None
+
+        # If 422 "Task isn't assigned" and we have a task name, try to find the correct task
+        if resp.status_code == 422 and task_name:
+            print(f"Harvest 422 for task_id={task_id}, searching by name '{task_name}'...")
+            correct_task_id = find_task_in_project(project_id, task_name, access_token)
+            if correct_task_id and correct_task_id != task_id:
+                print(f"Harvest: retrying with correct task_id={correct_task_id}")
+                payload["task_id"] = correct_task_id
+                resp2 = httpx.post(
+                    f"{HARVEST_BASE}/time_entries",
+                    headers=_headers(access_token),
+                    json=payload,
+                    timeout=10,
+                )
+                if resp2.status_code in (200, 201):
+                    entry = resp2.json()
+                    print(f"Harvest entry created (retry): ID {entry['id']}")
+                    return entry
+                else:
+                    print(f"Harvest retry error: {resp2.status_code} {resp2.text[:200]}")
+
+        print(f"Harvest create error: {resp.status_code} {resp.text[:200]}")
+        return None
     except Exception as e:
         print(f"Harvest create_time_entry error: {e}")
         return None

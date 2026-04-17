@@ -707,6 +707,7 @@ async def approve_all_entries(request: Request):
                     notes=entry.get("notes", ""),
                     user_id=harvest_user_id,
                     access_token=harvest_access_token,
+                    task_name=entry.get("project_name", entry.get("task", "")),
                 )
             except (ValueError, TypeError):
                 pass
@@ -829,6 +830,7 @@ async def approve_entry(entry_id: str, request: Request):
                 notes=entry.get("notes", ""),
                 user_id=harvest_user_id,
                 access_token=harvest_access_token,
+                task_name=entry.get("project_name", entry.get("task", "")),
             )
         except (ValueError, TypeError):
             pass  # Not numeric IDs, fall through to name resolution
