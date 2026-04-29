@@ -164,13 +164,27 @@ oauth.register(
 # stacks to 90+ seconds on a Cloudflare-blocked request and blows past
 # Render's 60s edge proxy timeout (returning 502 HTML to the browser).
 # We'd rather fail fast in <30s and let our graceful classifier surface a
-# clean error to the user. Render side has to fix the IP-reputation issue
-# anyway; retrying just delays the inevitable error message.
-client = anthropic.AsyncAnthropic(
-    api_key=os.getenv("ANTHROPIC_API_KEY"),
-    timeout=30.0,
-    max_retries=0,
-)
+# clean error to the user.
+#
+# ANTHROPIC_BASE_URL — when set, routes every SDK call through a Cloudflare
+# Worker proxy (poc/worker/anthropic-proxy.js). This sidesteps Render's
+# free-tier outbound IPs being on Cloudflare's bot-challenge list. The
+# Worker validates ANTHROPIC_PROXY_SECRET before forwarding to Anthropic.
+# When neither env var is set, the SDK calls api.anthropic.com directly —
+# so local dev and any future VPS deploy keep working without changes.
+_anthropic_kwargs = {
+    "api_key": os.getenv("ANTHROPIC_API_KEY"),
+    "timeout": 30.0,
+    "max_retries": 0,
+}
+_anthropic_base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
+if _anthropic_base_url:
+    _anthropic_kwargs["base_url"] = _anthropic_base_url
+    _proxy_secret = os.getenv("ANTHROPIC_PROXY_SECRET", "").strip()
+    if _proxy_secret:
+        _anthropic_kwargs["default_headers"] = {"x-proxy-secret": _proxy_secret}
+    print(f"[INFO] Anthropic SDK routed through proxy: {_anthropic_base_url}")
+client = anthropic.AsyncAnthropic(**_anthropic_kwargs)
 
 CHAT_MODEL = "claude-haiku-4-5-20251001"
 
