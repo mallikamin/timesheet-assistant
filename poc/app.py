@@ -964,11 +964,18 @@ def _sse(event: Dict) -> bytes:
 @app.post("/api/chat/stream")
 async def chat_stream(req: ChatRequest, request: Request):
     """SSE-streamed version of /api/chat. Yields:
+      - {"type":"status","message":"..."} setup progress (Connecting, Loading, Thinking)
       - {"type":"text","delta":"..."}    incremental text tokens
       - {"type":"tool","name":"..."}     when a tool call starts
       - {"type":"done","response":...,"entries_created":[...]}  final
       - {"type":"error","message":"..."} on failure
-    Then closes."""
+
+    Setup work (token refresh, project fetch, prompt build) runs INSIDE
+    the generator so the HTTP response starts streaming within ~50ms and
+    the client sees activity immediately. Previously this work ran in the
+    request handler before StreamingResponse was returned, which made
+    every chat appear hung for 3-30s before the first byte arrived.
+    """
     user = get_current_user(request)
     if not user:
         async def _unauth():
@@ -987,51 +994,69 @@ async def chat_stream(req: ChatRequest, request: Request):
             })
         return StreamingResponse(_rl(), media_type="text/event-stream")
 
-    messages: List[Dict] = []
-    for msg in req.history:
-        messages.append({"role": msg["role"], "content": msg["content"]})
-    messages.append({"role": "user", "content": req.message})
-
-    google_token = request.session.get("google_token")
-    has_google_access = False
-    access_token = None
-    if google_token and google_token.get("access_token"):
-        valid_token = calendar_sync.ensure_valid_token(google_token)
-        if valid_token:
-            request.session["google_token"] = valid_token
-            access_token = valid_token["access_token"]
-            has_google_access = True
-
-    harvest_token = request.session.get("harvest_token")
-    harvest_access_token = None
-    if harvest_token and harvest_token.get("access_token"):
-        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
-        if valid_token:
-            request.session["harvest_token"] = valid_token
-            harvest_access_token = valid_token["access_token"]
-
-    runtime_notes: List[str] = []
-    if not has_google_access:
-        runtime_notes.append(
-            "NOTE: The user has not granted Google Workspace access. "
-            "If they ask to scan emails, calendar, or drive, tell them to sign out "
-            "and sign back in to grant the required permissions."
-        )
-    if not harvest_access_token:
-        runtime_notes.append(
-            "NOTE: The user has not connected their Harvest account. "
-            "If they try to log time, tell them to click 'Connect Harvest' first."
-        )
-
-    system_blocks = build_system_prompt(
-        user_email=user.get("email"),
-        harvest_access_token=harvest_access_token,
-        notes=runtime_notes,
-    )
-    tools_param = TOOLS if has_google_access else None
-
     async def gen():
         chat_start_ts = time.time()
+        # Send a connection confirmation IMMEDIATELY so the browser opens
+        # the stream and shows the typing indicator. ~50ms TTFT regardless
+        # of how slow the downstream setup is.
+        yield _sse({"type": "status", "message": "Connecting..."})
+
+        # === Setup phase — was previously OUTSIDE the generator ===
+        setup_t0 = time.time()
+        messages: List[Dict] = []
+        for msg in req.history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": req.message})
+
+        google_token = request.session.get("google_token")
+        has_google_access = False
+        access_token = None
+        if google_token and google_token.get("access_token"):
+            valid_token = calendar_sync.ensure_valid_token(google_token)
+            if valid_token:
+                request.session["google_token"] = valid_token
+                access_token = valid_token["access_token"]
+                has_google_access = True
+
+        harvest_token = request.session.get("harvest_token")
+        harvest_access_token = None
+        if harvest_token and harvest_token.get("access_token"):
+            valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+            if valid_token:
+                request.session["harvest_token"] = valid_token
+                harvest_access_token = valid_token["access_token"]
+
+        token_validate_ms = int((time.time() - setup_t0) * 1000)
+        yield _sse({"type": "status", "message": "Loading your projects..."})
+
+        runtime_notes: List[str] = []
+        if not has_google_access:
+            runtime_notes.append(
+                "NOTE: The user has not granted Google Workspace access. "
+                "If they ask to scan emails, calendar, or drive, tell them to sign out "
+                "and sign back in to grant the required permissions."
+            )
+        if not harvest_access_token:
+            runtime_notes.append(
+                "NOTE: The user has not connected their Harvest account. "
+                "If they try to log time, tell them to click 'Connect Harvest' first."
+            )
+
+        prompt_t0 = time.time()
+        system_blocks = build_system_prompt(
+            user_email=user.get("email"),
+            harvest_access_token=harvest_access_token,
+            notes=runtime_notes,
+        )
+        prompt_build_ms = int((time.time() - prompt_t0) * 1000)
+        tools_param = TOOLS if has_google_access else None
+
+        yield _sse({"type": "status", "message": "Thinking..."})
+        print(
+            f"[chat_stream] setup: token_validate={token_validate_ms}ms "
+            f"prompt_build={prompt_build_ms}ms google={has_google_access} "
+            f"harvest={bool(harvest_access_token)}"
+        )
         tool_calls_log: List[Dict] = []
         last_usage: Dict = {}
         iterations = 0

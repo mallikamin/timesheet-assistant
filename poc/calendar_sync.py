@@ -33,12 +33,20 @@ def refresh_access_token(refresh_token: str) -> Optional[Dict]:
     if not refresh_token or not client_id:
         return None
 
-    resp = httpx.post(TOKEN_ENDPOINT, data={
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id": client_id,
-        "client_secret": client_secret,
-    })
+    try:
+        resp = httpx.post(
+            TOKEN_ENDPOINT,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=10,
+        )
+    except httpx.HTTPError as e:
+        print(f"Google token refresh network error: {e}")
+        return None
 
     if resp.status_code != 200:
         print(f"Token refresh failed: {resp.status_code} {resp.text}")

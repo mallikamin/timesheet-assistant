@@ -341,6 +341,10 @@
             opacity: 0.6;
             animation: streamcursor 1s steps(2, start) infinite;
         }
+        .message.assistant.status {
+            color: #607d8b;
+            font-style: italic;
+        }
         @keyframes streamcursor {
             to { opacity: 0.0; }
         }
@@ -826,9 +830,12 @@ What have you been up to?</div>
 
     async function sendMessageStreaming(text) {
         // Create the assistant message bubble we'll append text deltas into.
+        // Pre-populates with a status hint so the user sees IMMEDIATE
+        // feedback while server-side setup runs (token refresh, project
+        // fetch, prompt build).
         const bubble = document.createElement('div');
-        bubble.className = 'message assistant streaming';
-        bubble.textContent = '';
+        bubble.className = 'message assistant streaming status';
+        bubble.textContent = 'Connecting...';
         chatMessages.appendChild(bubble);
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -873,7 +880,17 @@ What have you been up to?</div>
                     continue;
                 }
 
-                if (payload.type === 'text') {
+                if (payload.type === 'status') {
+                    // Replace the placeholder while we wait for the real text
+                    if (!receivedAnyText) {
+                        bubble.textContent = payload.message || 'Working...';
+                    }
+                } else if (payload.type === 'text') {
+                    if (!receivedAnyText) {
+                        // First real text — clear the status placeholder
+                        bubble.textContent = '';
+                        bubble.classList.remove('status');
+                    }
                     bubble.textContent += payload.delta;
                     receivedAnyText = true;
                     chatMessages.scrollTop = chatMessages.scrollHeight;
