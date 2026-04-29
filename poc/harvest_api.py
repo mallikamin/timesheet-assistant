@@ -3,6 +3,7 @@ Harvest API v2 client.
 Handles real Harvest time entry creation, retrieval, and deletion.
 """
 
+import asyncio
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -120,6 +121,84 @@ def resolve_user_id(email: str, access_token: str = None) -> Optional[int]:
         if u.get("email", "").lower() == email.lower():
             return u["id"]
     return None
+
+
+async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
+    """Async version of get_projects_with_tasks — uses httpx.AsyncClient with
+    a SHARED connection pool and asyncio.gather to parallelize the 51 task
+    assignment calls properly. The previous sync + ThreadPoolExecutor version
+    creates a new TLS connection per call (httpx.get is a one-shot client),
+    which on Render was producing 30-44s cold-cache fetches in production.
+
+    With AsyncClient + connection reuse, expected cold-cache cost drops to
+    ~500ms-1.5s for 51 projects."""
+    global _project_cache, _cache_time
+
+    if _project_cache and (time.time() - _cache_time) < CACHE_TTL:
+        return _project_cache
+
+    fetch_t0 = time.time()
+    headers = _headers(access_token)
+
+    try:
+        # Single AsyncClient — connection pool shared across all 51 calls.
+        # http2=False keeps things simple (Harvest does HTTP/1.1 keep-alive).
+        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+            resp = await client.get(
+                f"{HARVEST_BASE}/projects",
+                params={"is_active": "true"},
+            )
+            if resp.status_code != 200:
+                print(f"[harvest_api] projects list error {resp.status_code}")
+                return _project_cache or []
+
+            projects = resp.json().get("projects", [])
+            list_ms = int((time.time() - fetch_t0) * 1000)
+
+            async def _fetch_one(pid: int) -> List[Dict]:
+                try:
+                    r = await client.get(
+                        f"{HARVEST_BASE}/projects/{pid}/task_assignments",
+                        params={"is_active": "true"},
+                    )
+                    if r.status_code != 200:
+                        return []
+                    return [
+                        {"task_id": ta["task"]["id"], "task_name": ta["task"]["name"]}
+                        for ta in r.json().get("task_assignments", [])
+                    ]
+                except Exception:
+                    return []
+
+            ta_t0 = time.time()
+            ta_lists = await asyncio.gather(
+                *(_fetch_one(p["id"]) for p in projects),
+                return_exceptions=False,
+            )
+            ta_ms = int((time.time() - ta_t0) * 1000)
+
+        result = [
+            {
+                "project_id": p["id"],
+                "project_name": p["name"],
+                "client_name": p["client"]["name"] if p.get("client") else p["name"],
+                "tasks": ta_lists[i],
+            }
+            for i, p in enumerate(projects)
+        ]
+
+        _project_cache = result
+        _cache_time = time.time()
+        total_ms = int((time.time() - fetch_t0) * 1000)
+        print(
+            f"[harvest_api] async fetch done: {len(result)} projects in "
+            f"{total_ms}ms (list={list_ms}ms, task_assignments={ta_ms}ms parallel)"
+        )
+        return result
+
+    except Exception as e:
+        print(f"[harvest_api] async fetch error: {e}")
+        return _project_cache or []
 
 
 def _fetch_task_assignments(project_id: int, access_token: Optional[str]) -> List[Dict]:

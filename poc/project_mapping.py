@@ -111,6 +111,61 @@ def get_projects(access_token: str = None) -> List[Dict]:
 def get_all_projects_for_prompt(access_token: str = None) -> str:
     """Format all projects and their tasks for the AI system prompt."""
     projects = get_projects(access_token)
+    return _format_projects_for_prompt(projects)
+
+
+async def _load_from_harvest_async(access_token: str = None) -> List[Dict]:
+    """Async version of _load_from_harvest — used by the streaming chat path
+    so the long-running fetch doesn't block the event loop."""
+    if not harvest_api.is_configured() and not access_token:
+        return []
+
+    projects = await harvest_api.get_projects_with_tasks_async(access_token)
+    if not projects:
+        return []
+
+    result = []
+    for p in projects:
+        if p["project_name"] == "Example Project":
+            continue
+        default_tasks = {"Design", "Programming", "Marketing", "Project Management", "Vacation"}
+        custom_tasks = [t for t in p["tasks"] if t["task_name"] not in default_tasks]
+        if not custom_tasks:
+            continue
+        result.append({
+            "project": p["project_name"],
+            "keywords": [p["project_name"].lower().split("(")[0].strip()],
+            "tasks": [
+                {
+                    "code": f"{p['project_id']}-{t['task_id']}",
+                    "name": t["task_name"],
+                    "keywords": [w.lower() for w in t["task_name"].split() if len(w) > 2],
+                    "harvest_project_id": p["project_id"],
+                    "harvest_task_id": t["task_id"],
+                }
+                for t in custom_tasks
+            ],
+        })
+    return result
+
+
+async def get_projects_async(access_token: str = None) -> List[Dict]:
+    """Async project list — live from Harvest (async) if available, else fallback."""
+    live = await _load_from_harvest_async(access_token)
+    if live:
+        return live
+    return HARVEST_PROJECTS_FALLBACK
+
+
+async def get_all_projects_for_prompt_async(access_token: str = None) -> str:
+    """Async version for use inside FastAPI async handlers — does the slow
+    Harvest fetch via httpx.AsyncClient so it doesn't block the event loop
+    and runs all 51 task_assignments calls in true parallel."""
+    projects = await get_projects_async(access_token)
+    return _format_projects_for_prompt(projects)
+
+
+def _format_projects_for_prompt(projects: List[Dict]) -> str:
     lines = []
     for p in projects:
         lines.append(f"\nProject: {p['project']}")
