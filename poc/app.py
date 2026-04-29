@@ -7,6 +7,7 @@ Google SSO authentication.
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -38,35 +39,28 @@ from project_mapping import get_all_projects_for_prompt, get_projects
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
-app = FastAPI(title="Timesheet Assistant POC")
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
-)
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-
 # --- Phase 2 Task Management (LOCAL ONLY — gated behind LOCAL_DEMO_ONLY=1) ---
 LOCAL_DEMO_ONLY = os.getenv("LOCAL_DEMO_ONLY", "").strip() == "1"
 
-
-@app.on_event("startup")
-async def seed_demo_tasks():
-    if not LOCAL_DEMO_ONLY:
-        return
-    # Local demo uses in-memory storage so seed data is deterministic and
-    # doesn't collide with any stale rows in Supabase.
-    tasks._use_memory = True
-    tasks._supabase_available = False
-    tasks._in_memory_tasks.clear()
-    tasks.seed_tasks()
-    print(f"[OK] Seeded {len(tasks.get_all_tasks())} tasks across {len(tasks.PROJECTS)} initiatives")
+# Process boot timestamp — used by /health to report uptime.
+_BOOT_TS = time.time()
 
 
-@app.on_event("startup")
-async def warm_harvest_cache():
-    """Pre-warm Harvest projects/users cache if a service PAT is configured.
-    Saves the first user from waiting 5-10s on cold N+1 fetch."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan handler: runs once on startup before serving requests
+    and once on shutdown. Replaces the deprecated @app.on_event decorators."""
+    if LOCAL_DEMO_ONLY:
+        # Local demo uses in-memory storage so seed data is deterministic and
+        # doesn't collide with any stale rows in Supabase.
+        tasks._use_memory = True
+        tasks._supabase_available = False
+        tasks._in_memory_tasks.clear()
+        tasks.seed_tasks()
+        print(f"[OK] Seeded {len(tasks.get_all_tasks())} tasks across {len(tasks.PROJECTS)} initiatives")
+
+    # Pre-warm Harvest projects/users cache if a service PAT is configured.
+    # Saves the first user from waiting 5-10s on the cold N+1 fetch path.
     if harvest_api.is_configured():
         try:
             projects = harvest_api.get_projects_with_tasks()
@@ -76,6 +70,17 @@ async def warm_harvest_cache():
             print(f"[WARN] Harvest pre-warm skipped: {e}")
     else:
         print("[INFO] No Harvest PAT — first user will pay cold-start cost")
+
+    yield
+    # No shutdown work yet; uvicorn handles graceful socket close.
+
+
+app = FastAPI(title="Timesheet Assistant POC", lifespan=lifespan)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
+)
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 # Google OAuth
@@ -509,6 +514,33 @@ async def execute_tool(tool_name: str, tool_input: Dict, access_token: str) -> s
     except Exception as e:
         print(f"Tool execution error ({tool_name}): {e}")
         return f"ERROR: Failed to execute {tool_name}: {str(e)}"
+
+
+# --- Health & Readiness ---
+
+@app.get("/health")
+async def health(request: Request):
+    """Lightweight readiness probe for Render + UptimeRobot. Always returns
+    200 if the process is alive — degraded downstream deps (Anthropic,
+    Harvest, Supabase) are surfaced in the body so they're observable but
+    don't fail the probe (we don't want UptimeRobot to alert on transient
+    Anthropic blips)."""
+    return {
+        "status": "ok",
+        "service": "timesheet-assistant",
+        "model": CHAT_MODEL,
+        "uptime_seconds": int(time.time() - _BOOT_TS),
+        "deps": {
+            "anthropic_key_present": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "harvest_pat_configured": harvest_api.is_configured(),
+            "supabase_configured": harvest_mock._supabase_configured(),
+            "google_oauth_configured": bool(os.getenv("GOOGLE_CLIENT_ID")),
+            "harvest_oauth_configured": bool(os.getenv("HARVEST_CLIENT_ID")),
+        },
+        "build": {
+            "local_demo_only": LOCAL_DEMO_ONLY,
+        },
+    }
 
 
 # --- Auth Routes ---
