@@ -18,7 +18,7 @@ import uvicorn
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -949,6 +949,244 @@ async def chat(req: ChatRequest, request: Request):
         e["_interaction_id"] = interaction_id
 
     return ChatResponse(response=display_text, entries_created=created_entries)
+
+
+# --- Streaming chat (SSE) — same logic as /api/chat but the FINAL Claude
+#     response is streamed token-by-token for immediate TTFT to the user.
+#     Tool-using turns still wait for tool execution server-side, but the
+#     synthesis after tool runs streams. Frontend uses fetch + ReadableStream.
+
+def _sse(event: Dict) -> bytes:
+    """Format a dict as a single Server-Sent Event line."""
+    return f"data: {json.dumps(event)}\n\n".encode("utf-8")
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request):
+    """SSE-streamed version of /api/chat. Yields:
+      - {"type":"text","delta":"..."}    incremental text tokens
+      - {"type":"tool","name":"..."}     when a tool call starts
+      - {"type":"done","response":...,"entries_created":[...]}  final
+      - {"type":"error","message":"..."} on failure
+    Then closes."""
+    user = get_current_user(request)
+    if not user:
+        async def _unauth():
+            yield _sse({"type": "error", "message": "Please log in first."})
+        return StreamingResponse(_unauth(), media_type="text/event-stream")
+
+    allowed, retry_after = rate_limit.check_and_consume(user.get("email", ""))
+    if not allowed:
+        async def _rl():
+            yield _sse({
+                "type": "error",
+                "message": (
+                    f"You're sending messages faster than I can keep up. "
+                    f"Try again in {int(retry_after) + 1}s."
+                ),
+            })
+        return StreamingResponse(_rl(), media_type="text/event-stream")
+
+    messages: List[Dict] = []
+    for msg in req.history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": req.message})
+
+    google_token = request.session.get("google_token")
+    has_google_access = False
+    access_token = None
+    if google_token and google_token.get("access_token"):
+        valid_token = calendar_sync.ensure_valid_token(google_token)
+        if valid_token:
+            request.session["google_token"] = valid_token
+            access_token = valid_token["access_token"]
+            has_google_access = True
+
+    harvest_token = request.session.get("harvest_token")
+    harvest_access_token = None
+    if harvest_token and harvest_token.get("access_token"):
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            request.session["harvest_token"] = valid_token
+            harvest_access_token = valid_token["access_token"]
+
+    runtime_notes: List[str] = []
+    if not has_google_access:
+        runtime_notes.append(
+            "NOTE: The user has not granted Google Workspace access. "
+            "If they ask to scan emails, calendar, or drive, tell them to sign out "
+            "and sign back in to grant the required permissions."
+        )
+    if not harvest_access_token:
+        runtime_notes.append(
+            "NOTE: The user has not connected their Harvest account. "
+            "If they try to log time, tell them to click 'Connect Harvest' first."
+        )
+
+    system_blocks = build_system_prompt(
+        user_email=user.get("email"),
+        harvest_access_token=harvest_access_token,
+        notes=runtime_notes,
+    )
+    tools_param = TOOLS if has_google_access else None
+
+    async def gen():
+        chat_start_ts = time.time()
+        tool_calls_log: List[Dict] = []
+        last_usage: Dict = {}
+        iterations = 0
+        final_text_parts: List[str] = []
+        last_response = None
+
+        try:
+            while iterations < MAX_TOOL_ITERATIONS:
+                iterations += 1
+                api_kwargs = {
+                    "model": CHAT_MODEL,
+                    "max_tokens": 2048,
+                    "system": system_blocks,
+                    "messages": messages,
+                }
+                if tools_param:
+                    api_kwargs["tools"] = tools_param
+
+                # Stream this iteration. Anthropic SDK's `stream()` is an async
+                # context manager. Text deltas forward immediately to the
+                # client; tool_use blocks are accumulated then executed.
+                async with client.messages.stream(**api_kwargs) as stream:
+                    iter_text = ""
+                    async for text in stream.text_stream:
+                        iter_text += text
+                        yield _sse({"type": "text", "delta": text})
+                    last_response = await stream.get_final_message()
+
+                last_usage = training_log.usage_metrics(last_response)
+
+                if last_response.stop_reason == "end_turn":
+                    final_text_parts.append(iter_text)
+                    break
+
+                if last_response.stop_reason == "tool_use":
+                    messages.append({"role": "assistant", "content": last_response.content})
+
+                    if has_google_access:
+                        refreshed = calendar_sync.ensure_valid_token(
+                            request.session.get("google_token", {})
+                        )
+                        if refreshed:
+                            request.session["google_token"] = refreshed
+                            access_token2 = refreshed["access_token"]
+                        else:
+                            access_token2 = None
+                    else:
+                        access_token2 = None
+
+                    tool_results = []
+                    for block in last_response.content:
+                        if getattr(block, "type", None) == "tool_use":
+                            yield _sse({"type": "tool", "name": block.name})
+                            tool_calls_log.append({
+                                "iteration": iterations,
+                                "name": block.name,
+                                "input": block.input,
+                            })
+                            if not access_token2:
+                                result_text = "ERROR: Google access is no longer available."
+                            else:
+                                result_text = await execute_tool(
+                                    tool_name=block.name,
+                                    tool_input=block.input,
+                                    access_token=access_token2,
+                                )
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result_text,
+                            })
+                    messages.append({"role": "user", "content": tool_results})
+                    final_text_parts.append(iter_text)  # any text before the tool call
+                    continue
+
+                # Other stop reasons (max_tokens, etc.) — break with what we have.
+                final_text_parts.append(iter_text)
+                break
+
+            full_text = "".join(final_text_parts)
+            display_text, entries_data = parse_entries_from_response(full_text)
+
+            harvest_mock.save_chat_message(req.user, "user", req.message)
+            harvest_mock.save_chat_message(req.user, "assistant", display_text)
+
+            created_entries = []
+            for entry_data in entries_data:
+                entry = save_entry_everywhere(
+                    req.user, entry_data, user_email=user.get("email", "")
+                )
+                created_entries.append(entry)
+
+            profile_snapshot = user_profiles.get_profile(user.get("email", ""))
+            interaction_id = training_log.log(
+                kind="chat",
+                user_email=user.get("email", ""),
+                user_name=user.get("name", ""),
+                input_payload={
+                    "message": req.message,
+                    "history_len": len(req.history),
+                    "model": CHAT_MODEL,
+                    "system_prompt_hash": training_log.prompt_signature(system_blocks),
+                    "has_google_access": has_google_access,
+                    "has_harvest_access": bool(harvest_access_token),
+                    "streamed": True,
+                },
+                context={
+                    "dialect": profile_snapshot.get("dialect"),
+                    "assigned_project_count": len(profile_snapshot.get("assigned_project_codes") or []),
+                    "common_tasks_count": len(profile_snapshot.get("common_tasks") or []),
+                    "recent_corrections_count": len(profile_snapshot.get("recent_corrections") or []),
+                },
+                output={
+                    "response_text": display_text,
+                    "tool_calls": tool_calls_log,
+                    "iterations": iterations,
+                    "stop_reason": getattr(last_response, "stop_reason", None) if last_response else None,
+                    "entries_created": [
+                        {
+                            "id": e.get("id"),
+                            "client": e.get("client"),
+                            "project_code": e.get("project_code"),
+                            "project_name": e.get("project_name"),
+                            "hours": e.get("hours"),
+                            "status": e.get("status"),
+                        }
+                        for e in created_entries
+                    ],
+                },
+                metrics={
+                    "latency_ms": int((time.time() - chat_start_ts) * 1000),
+                    **last_usage,
+                },
+            )
+            for e in created_entries:
+                e["_interaction_id"] = interaction_id
+
+            yield _sse({
+                "type": "done",
+                "response": display_text,
+                "entries_created": created_entries,
+            })
+        except Exception as e:
+            print(f"[ERR] chat_stream: {e}")
+            yield _sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx buffering on proxies
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/api/entries/approve-all")
