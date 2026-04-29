@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Thrive — Digital Initiatives</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Figtree',-apple-system,sans-serif; background:#F4F5F8; color:#1D1D1F; }
+
+.header { background:#fff; border-bottom:1px solid #E6E9EF; padding:12px 32px;
+  display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; }
+.thrive-logo { display:inline-flex; flex-direction:column; line-height:1; }
+.thrive-word { font-family:'Figtree',sans-serif; font-style:italic; font-weight:800;
+  font-size:28px; color:#5B3A8F; letter-spacing:-0.6px; position:relative; }
+.thrive-word .star { color:#F4C430; font-size:14px; font-style:normal; font-weight:700;
+  position:relative; top:-10px; margin-left:1px; }
+.thrive-tag { font-size:8.5px; letter-spacing:2.6px; color:#9a9fab; font-weight:500;
+  margin-top:5px; text-transform:lowercase; }
+.header-title { margin-left:22px; padding-left:22px; border-left:1px solid #E6E9EF;
+  font-size:15px; font-weight:600; color:#323338; }
+.header-actions a { text-decoration:none; padding:8px 14px; background:#F4A623; color:#1A1A2E;
+  border-radius:6px; font-size:13px; font-weight:600; margin-right:10px; }
+.header-actions .avatar { width:34px; height:34px; border-radius:50%; display:inline-flex;
+  align-items:center; justify-content:center; background:linear-gradient(135deg,#F4A623,#6B4C9A);
+  color:#fff; font-weight:600; font-size:12px; vertical-align:middle; }
+
+.main { padding:28px 32px; }
+.page-head { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+.page-title { font-size:26px; font-weight:700; }
+.page-sub { color:#676879; font-size:13px; margin-top:4px; }
+.updated { color:#8a8f9a; font-size:12px; }
+
+.tabs { display:flex; gap:6px; border-bottom:2px solid #E6E9EF; margin-bottom:22px; }
+.tab { padding:12px 18px; background:none; border:none; cursor:pointer;
+  font-size:14px; font-weight:600; color:#676879; border-bottom:2px solid transparent;
+  margin-bottom:-2px; }
+.tab.active { color:#F4A623; border-bottom-color:#F4A623; }
+
+.view { display:none; }
+.view.active { display:block; }
+
+/* ---------- BOARD (cards) ---------- */
+.summary-row { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px; }
+.summary-card { background:#fff; border-radius:10px; padding:14px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+.summary-card .label { color:#676879; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.summary-card .value { font-size:24px; font-weight:700; margin-top:4px; }
+.summary-card.completed .value { color:#00C875; }
+.summary-card.in_progress .value { color:#F4A623; }
+.summary-card.blocked .value { color:#E2445C; }
+.summary-card.attention .value { color:#FF7A45; }
+
+.board-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+.init-card { background:#fff; border-radius:10px; padding:18px; cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04); transition:transform .15s, box-shadow .15s;
+  border-top:4px solid #E6E9EF; display:flex; flex-direction:column; min-height:200px; }
+.init-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,0.08); }
+.init-card.s-in-progress { border-top-color:#F4A623; }
+.init-card.s-completed { border-top-color:#00C875; }
+.init-card.s-not-started, .init-card.s-to-be-started { border-top-color:#B0B6C0; }
+.init-card.s-blocked { border-top-color:#E2445C; }
+.init-card.s-needs-attention { border-top-color:#FF7A45; }
+
+.init-card .cat { font-size:11px; font-weight:600; color:#6B4C9A; text-transform:uppercase; letter-spacing:0.5px; }
+.init-card h3 { font-size:17px; font-weight:700; margin-top:4px; margin-bottom:8px; color:#1D1D1F; }
+.init-card .desc { font-size:13px; color:#555; margin-bottom:12px; flex:1; }
+.init-card .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+.init-card .chip { font-size:11px; padding:3px 8px; border-radius:12px; background:#F0F0F3; color:#444; }
+
+.status-pill { display:inline-block; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.pill-in-progress { background:#FFF4E6; color:#C9851E; }
+.pill-completed { background:#E4F7ED; color:#00A865; }
+.pill-not-started, .pill-to-be-started { background:#EEF0F3; color:#676879; }
+.pill-blocked { background:#FDE7EA; color:#C53B4C; }
+.pill-needs-attention { background:#FFE8DE; color:#C9562E; }
+
+.progress { height:6px; background:#EEF0F3; border-radius:4px; overflow:hidden; margin-top:10px; }
+.progress > span { display:block; height:100%; background:linear-gradient(90deg,#F4A623,#6B4C9A); }
+
+.init-meta { display:flex; justify-content:space-between; align-items:center; margin-top:10px; font-size:12px; color:#676879; }
+
+/* ---------- GANTT ---------- */
+.gantt-wrap { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,0.04); overflow-x:auto; }
+.gantt-row { display:grid; grid-template-columns:260px 1fr; align-items:center; min-height:40px; border-bottom:1px dashed #EEF0F3; }
+.gantt-row.header { font-weight:700; border-bottom:2px solid #E6E9EF; background:#FAFBFD; }
+.gantt-label { padding:10px 12px; font-size:13px; font-weight:600; color:#1D1D1F; }
+.gantt-label small { display:block; color:#8a8f9a; font-size:11px; font-weight:500; margin-top:2px; }
+.gantt-track { position:relative; height:28px; }
+.gantt-bar { position:absolute; height:22px; border-radius:4px; top:3px;
+  font-size:11px; color:#fff; padding:3px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:0 1px 3px rgba(0,0,0,0.12); cursor:pointer; }
+.gantt-bar.task { height:14px; top:7px; opacity:0.85; }
+.gantt-today { position:absolute; top:0; bottom:0; width:2px; background:#E2445C; z-index:5; }
+.gantt-today::after { content:"Today"; position:absolute; top:-16px; left:-16px; font-size:10px; color:#E2445C; font-weight:600; }
+.gantt-months { position:relative; height:28px; margin-left:260px; border-bottom:1px solid #E6E9EF; margin-bottom:8px; }
+.gantt-month { position:absolute; font-size:11px; font-weight:600; color:#676879; top:8px; }
+
+/* ---------- CALENDAR ---------- */
+.cal-wrap { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+.cal-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.cal-head h3 { font-size:18px; font-weight:600; }
+.cal-nav { display:flex; gap:8px; }
+.cal-nav button { padding:6px 12px; border:1px solid #E0E0E0; background:#fff; border-radius:6px; cursor:pointer; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:#E0E0E0; border:1px solid #E0E0E0; border-radius:8px; overflow:hidden; }
+.cal-dayname { background:#F8F8F8; padding:10px; text-align:center; font-weight:600; font-size:12px; color:#676879; }
+.cal-cell { background:#fff; padding:6px; min-height:100px; font-size:11px; position:relative; }
+.cal-cell.today { background:#FFF7E8; border:2px solid #F4A623; }
+.cal-cell.out { background:#FAFAFA; }
+.cal-daynum { font-weight:600; font-size:12px; margin-bottom:4px; }
+.cal-event { padding:3px 6px; border-radius:3px; font-size:10px; color:#fff; margin-bottom:3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+
+.init-color-0 { background:#6B4C9A; }
+.init-color-1 { background:#F4A623; }
+.init-color-2 { background:#00A865; }
+.init-color-3 { background:#4A90E2; }
+.init-color-4 { background:#E2445C; }
+.init-color-5 { background:#8E44AD; }
+.init-color-6 { background:#16A085; }
+.init-color-7 { background:#D35400; }
+
+.legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; font-size:12px; }
+.legend-item { display:flex; align-items:center; gap:6px; }
+.legend-dot { width:12px; height:12px; border-radius:3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex; align-items:center;">
+    <div class="thrive-logo">
+      <div class="thrive-word">thrive<span class="star">*</span></div>
+      <div class="thrive-tag">pr  |  content  |  digital</div>
+    </div>
+    <div class="header-title">Digital Initiatives Tracker</div>
+  </div>
+  <div class="header-actions">
+    <a href="/">⏰ Timesheet App</a>
+    <span class="avatar" title="{{ user.name }}">{{ user.name[0]|upper }}{{ user.name.split()[-1][0]|upper if ' ' in user.name else '' }}</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="page-head">
+    <div>
+      <div class="page-title">Digital Initiatives</div>
+      <div class="page-sub">8 initiatives across the agency — board, timeline, and calendar at a glance</div>
+    </div>
+    <div class="updated" id="updated-stamp"></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="board" onclick="switchView('board', this)">📊 Overall Board</button>
+    <button class="tab" data-view="gantt" onclick="switchView('gantt', this)">📈 Gantt Chart</button>
+    <button class="tab" data-view="calendar" onclick="switchView('calendar', this)">🗓️ Calendar</button>
+  </div>
+
+  <!-- ======= BOARD ======= -->
+  <div id="view-board" class="view active">
+    <div class="summary-row" id="summary-row"></div>
+    <div class="board-grid" id="board-grid"></div>
+  </div>
+
+  <!-- ======= GANTT ======= -->
+  <div id="view-gantt" class="view">
+    <div class="gantt-wrap">
+      <div class="gantt-months" id="gantt-months"></div>
+      <div id="gantt-body"></div>
+    </div>
+  </div>
+
+  <!-- ======= CALENDAR ======= -->
+  <div id="view-calendar" class="view">
+    <div class="cal-wrap">
+      <div class="cal-head">
+        <h3 id="cal-title">—</h3>
+        <div class="cal-nav">
+          <button onclick="changeMonth(-1)">←</button>
+          <button onclick="changeMonth(0)">Today</button>
+          <button onclick="changeMonth(1)">→</button>
+        </div>
+      </div>
+      <div class="legend" id="cal-legend"></div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let PROJECTS = [];
+let TASKS = [];
+let calMonth = new Date();
+
+function slugify(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+function statusClass(s){ return 's-' + slugify(s); }
+function pillClass(s){ return 'pill-' + slugify(s); }
+
+async function loadData(){
+  const [projRes, taskRes] = await Promise.all([
+    fetch('/api/projects').then(r=>r.json()),
+    fetch('/api/tasks').then(r=>r.json()),
+  ]);
+  PROJECTS = projRes;
+  TASKS = taskRes;
+  document.getElementById('updated-stamp').textContent =
+    'Last updated: ' + new Date().toLocaleDateString('en-AU', {day:'2-digit', month:'short', year:'numeric'});
+  renderSummary();
+  renderBoard();
+  renderGantt();
+  renderCalendar();
+}
+
+function switchView(name, btn){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'gantt') renderGantt();
+  if (name === 'calendar') renderCalendar();
+}
+
+function renderSummary(){
+  const total = PROJECTS.length;
+  const counts = { "Completed":0, "In progress":0, "Not started":0,
+                   "To be started":0, "Blocked":0, "Needs attention":0 };
+  PROJECTS.forEach(p => { counts[p.status] = (counts[p.status]||0) + 1; });
+
+  const html = `
+    <div class="summary-card"><div class="label">Initiatives</div><div class="value">${total}</div></div>
+    <div class="summary-card in_progress"><div class="label">In Progress</div><div class="value">${counts['In progress']}</div></div>
+    <div class="summary-card completed"><div class="label">Completed (project)</div><div class="value">${counts['Completed']}</div></div>
+    <div class="summary-card attention"><div class="label">Needs Attention</div><div class="value">${counts['Needs attention']}</div></div>
+    <div class="summary-card blocked"><div class="label">To Be Started</div><div class="value">${counts['To be started']}</div></div>
+  `;
+  document.getElementById('summary-row').innerHTML = html;
+}
+
+function renderBoard(){
+  const grid = document.getElementById('board-grid');
+  grid.innerHTML = PROJECTS.map(p => {
+    const champ = (p.champions || []).join(' · ');
+    const chipsHtml = (p.champions || []).map(c => `<span class="chip">👤 ${c}</span>`).join('');
+    return `
+      <div class="init-card ${statusClass(p.status)}" onclick="window.location='/board/project/${encodeURIComponent(p.name)}'">
+        <div class="cat">${p.category}</div>
+        <h3>${p.name}</h3>
+        <div class="desc">${p.what_we_doing}</div>
+        <div class="chips">${chipsHtml}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="status-pill ${pillClass(p.status)}">${p.status}</span>
+          <span style="font-size:12px; color:#676879;">${p.completed_count}/${p.task_count} tasks</span>
+        </div>
+        <div class="progress"><span style="width:${p.progress_pct}%"></span></div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- GANTT ---------- */
+function renderGantt(){
+  const startAll = new Date();
+  const endAll = new Date();
+  PROJECTS.forEach(p => {
+    const s = new Date(p.start_date), e = new Date(p.end_date);
+    if (s < startAll) startAll.setTime(s.getTime());
+    if (e > endAll) endAll.setTime(e.getTime());
+  });
+  startAll.setDate(startAll.getDate() - 7);
+  endAll.setDate(endAll.getDate() + 7);
+  const totalDays = Math.ceil((endAll - startAll)/(1000*60*60*24));
+  const dayWidth = Math.max(6, Math.min(12, 1800/totalDays));
+  const trackWidth = totalDays * dayWidth;
+
+  // month headers
+  const monthsHtml = [];
+  let cursor = new Date(startAll.getFullYear(), startAll.getMonth(), 1);
+  while (cursor < endAll) {
+    const offsetDays = Math.ceil((cursor - startAll)/(1000*60*60*24));
+    monthsHtml.push(`<div class="gantt-month" style="left:${offsetDays*dayWidth}px">${cursor.toLocaleDateString('en-AU',{month:'short', year:'2-digit'})}</div>`);
+    cursor.setMonth(cursor.getMonth()+1);
+  }
+  const monthsBar = document.getElementById('gantt-months');
+  monthsBar.style.width = trackWidth + 'px';
+  monthsBar.innerHTML = monthsHtml.join('');
+
+  const today = new Date();
+  const todayOffset = Math.max(0, Math.ceil((today - startAll)/(1000*60*60*24)) * dayWidth);
+
+  let body = '';
+  PROJECTS.forEach((p, idx) => {
+    const pStart = new Date(p.start_date);
+    const pEnd = new Date(p.end_date);
+    const x = Math.ceil((pStart - startAll)/(1000*60*60*24)) * dayWidth;
+    const w = Math.max(20, Math.ceil((pEnd - pStart)/(1000*60*60*24)) * dayWidth);
+    const colorClass = 'init-color-'+(idx%8);
+    body += `
+      <div class="gantt-row" onclick="window.location='/board/project/${encodeURIComponent(p.name)}'">
+        <div class="gantt-label">${p.name}<small>${p.category} · ${(p.champions||[]).join(', ')}</small></div>
+        <div class="gantt-track" style="width:${trackWidth}px">
+          <div class="gantt-today" style="left:${todayOffset}px"></div>
+          <div class="gantt-bar ${colorClass}" style="left:${x}px; width:${w}px" title="${p.name}">${p.name}</div>
+        </div>
+      </div>
+    `;
+    // Sub-rows: tasks for this project
+    const projTasks = TASKS.filter(t => t.project === p.name);
+    projTasks.forEach(t => {
+      const tDate = new Date(t.due_date);
+      const tEnd = tDate;
+      const tStart = new Date(tDate); tStart.setDate(tStart.getDate() - 5);
+      const tx = Math.ceil((tStart - startAll)/(1000*60*60*24)) * dayWidth;
+      const tw = Math.max(12, Math.ceil((tEnd - tStart)/(1000*60*60*24)) * dayWidth);
+      body += `
+        <div class="gantt-row">
+          <div class="gantt-label" style="padding-left:28px; font-weight:500; font-size:12px; color:#676879;">↳ ${t.title}<small>${t.status} · due ${t.due_date}</small></div>
+          <div class="gantt-track" style="width:${trackWidth}px">
+            <div class="gantt-today" style="left:${todayOffset}px"></div>
+            <div class="gantt-bar task ${colorClass}" style="left:${tx}px; width:${tw}px" title="${t.title} — ${t.status}">${t.status}</div>
+          </div>
+        </div>
+      `;
+    });
+  });
+  document.getElementById('gantt-body').innerHTML = body;
+}
+
+/* ---------- CALENDAR ---------- */
+function renderCalendar(){
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  document.getElementById('cal-title').textContent = calMonth.toLocaleDateString('en-AU', {month:'long', year:'numeric'});
+
+  const firstDay = new Date(y, m, 1);
+  const startDay = firstDay.getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  let html = '';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => html += `<div class="cal-dayname">${d}</div>`);
+
+  for (let i=0; i<startDay; i++) html += `<div class="cal-cell out"></div>`;
+
+  for (let d=1; d<=daysInMonth; d++){
+    const cur = new Date(y, m, d);
+    const iso = cur.toISOString().split('T')[0];
+    const isToday = cur.getTime() === today.getTime();
+    const dayTasks = TASKS.filter(t => t.due_date === iso);
+    html += `<div class="cal-cell ${isToday?'today':''}">`;
+    html += `<div class="cal-daynum">${d}</div>`;
+    dayTasks.forEach(t => {
+      const projIdx = PROJECTS.findIndex(p => p.name === t.project);
+      const c = 'init-color-' + (projIdx>=0 ? projIdx%8 : 0);
+      html += `<div class="cal-event ${c}" title="${t.project} — ${t.title} (${t.status})"
+                onclick="window.location='/board/project/${encodeURIComponent(t.project)}'">${t.title}</div>`;
+    });
+    html += `</div>`;
+  }
+  const endDay = (startDay + daysInMonth) % 7;
+  if (endDay !== 0) for (let i=endDay; i<7; i++) html += `<div class="cal-cell out"></div>`;
+
+  document.getElementById('cal-grid').innerHTML = html;
+
+  document.getElementById('cal-legend').innerHTML = PROJECTS.map((p,i) =>
+    `<div class="legend-item"><div class="legend-dot init-color-${i%8}"></div>${p.name}</div>`
+  ).join('');
+}
+
+function changeMonth(delta){
+  if (delta === 0) calMonth = new Date();
+  else calMonth.setMonth(calMonth.getMonth() + delta);
+  renderCalendar();
+}
+
+window.addEventListener('DOMContentLoaded', loadData);
+</script>
+</body>
+</html>

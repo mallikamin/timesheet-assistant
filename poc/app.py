@@ -7,7 +7,7 @@ Google SSO authentication.
 import json
 import os
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -29,7 +29,11 @@ import harvest_api
 import harvest_mock
 import harvest_oauth
 import sheets_sync
-from project_mapping import get_all_projects_for_prompt
+import tasks
+import tasks_routes
+import training_log
+import user_profiles
+from project_mapping import get_all_projects_for_prompt, get_projects
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -40,6 +44,39 @@ app.add_middleware(
     secret_key=os.getenv("SESSION_SECRET", "timesheet-poc-secret-key-2026"),
 )
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+# --- Phase 2 Task Management (LOCAL ONLY — gated behind LOCAL_DEMO_ONLY=1) ---
+LOCAL_DEMO_ONLY = os.getenv("LOCAL_DEMO_ONLY", "").strip() == "1"
+
+
+@app.on_event("startup")
+async def seed_demo_tasks():
+    if not LOCAL_DEMO_ONLY:
+        return
+    # Local demo uses in-memory storage so seed data is deterministic and
+    # doesn't collide with any stale rows in Supabase.
+    tasks._use_memory = True
+    tasks._supabase_available = False
+    tasks._in_memory_tasks.clear()
+    tasks.seed_tasks()
+    print(f"[OK] Seeded {len(tasks.get_all_tasks())} tasks across {len(tasks.PROJECTS)} initiatives")
+
+
+@app.on_event("startup")
+async def warm_harvest_cache():
+    """Pre-warm Harvest projects/users cache if a service PAT is configured.
+    Saves the first user from waiting 5-10s on cold N+1 fetch."""
+    if harvest_api.is_configured():
+        try:
+            projects = harvest_api.get_projects_with_tasks()
+            users = harvest_api.get_users()
+            print(f"[OK] Pre-warmed Harvest cache: {len(projects)} projects, {len(users)} users")
+        except Exception as e:
+            print(f"[WARN] Harvest pre-warm skipped: {e}")
+    else:
+        print("[INFO] No Harvest PAT — first user will pay cold-start cost")
+
 
 # Google OAuth
 oauth = OAuth()
@@ -66,7 +103,9 @@ oauth.register(
     },
 )
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+CHAT_MODEL = "claude-haiku-4-5-20251001"
 
 PILOT_USERS = ["Tariq Munir", "Malik Amin", "Jawad Saleem"]
 
@@ -159,14 +198,44 @@ Pilot users: {{pilot_users}}
 """
 
 
-def build_system_prompt(harvest_access_token: str = None) -> str:
-    """Build the system prompt with current date and projects list."""
+def build_system_prompt(
+    user_email: Optional[str] = None,
+    harvest_access_token: Optional[str] = None,
+    notes: Optional[List[str]] = None,
+) -> List[Dict]:
+    """Build the system prompt as Anthropic message blocks with cache control.
+
+    Returns a list of blocks:
+      - Block A (cached, ephemeral): role, rules, AU/NZ vocab, master Harvest
+        catalog, dates, pilot users. Identical for every user → cache hit on
+        every chat after the first.
+      - Block B (uncached, optional): per-user profile (assigned projects,
+        dialect, top tasks, recent corrections) + transient runtime notes.
+        Skipped entirely if both inputs are empty so we don't waste tokens.
+    """
     projects_text = get_all_projects_for_prompt(harvest_access_token)
-    return SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
+    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
         .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
         .replace("{{today_day}}", date.today().strftime('%A')) \
         .replace("{{projects_text}}", projects_text) \
         .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
+
+    blocks: List[Dict] = [
+        {"type": "text", "text": cached_text, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    uncached_parts: List[str] = []
+    if user_email:
+        profile_text = user_profiles.render_profile_block(user_email)
+        if profile_text:
+            uncached_parts.append(profile_text)
+    if notes:
+        uncached_parts.extend(n for n in notes if n)
+
+    if uncached_parts:
+        blocks.append({"type": "text", "text": "\n\n".join(uncached_parts)})
+
+    return blocks
 
 
 def get_current_user(request: Request) -> Optional[Dict]:
@@ -452,18 +521,43 @@ async def auth_harvest(request: Request):
 
 @app.get("/auth/harvest/callback")
 async def auth_harvest_callback(request: Request):
-    """Handle Harvest OAuth callback."""
+    """Handle Harvest OAuth callback. Also bootstraps the user's profile from
+    their Harvest project assignments so the AI knows what they work on."""
     try:
         token = await oauth.harvest.authorize_access_token(request)
 
-        # Store Harvest OAuth tokens in session
+        access_token = token.get("access_token", "")
         request.session["harvest_token"] = {
-            "access_token": token.get("access_token", ""),
+            "access_token": access_token,
             "refresh_token": token.get("refresh_token", ""),
             "expires_at": time.time() + token.get("expires_in", 1209600),  # 14 days
         }
 
-        # Success - redirect to dashboard
+        # Bootstrap the per-user profile from Harvest's view of this user
+        user = get_current_user(request)
+        if user and user.get("email") and access_token:
+            try:
+                me = harvest_api.get_my_user(access_token)
+                assignments = harvest_api.get_my_project_assignments(access_token)
+                project_codes = [
+                    str(a["project"]["id"])
+                    for a in assignments
+                    if a.get("project") and a["project"].get("id")
+                ]
+                user_profiles.bootstrap_from_harvest(
+                    email=user["email"],
+                    display_name=user.get("name", ""),
+                    harvest_user_id=(me or {}).get("id"),
+                    assigned_project_codes=project_codes,
+                )
+                print(
+                    f"[OK] Profile bootstrap: {user['email']} -> "
+                    f"harvest_user_id={(me or {}).get('id')}, "
+                    f"{len(project_codes)} projects"
+                )
+            except Exception as bootstrap_err:
+                print(f"[WARN] Profile bootstrap failed: {bootstrap_err}")
+
         return RedirectResponse(url="/")
     except Exception as e:
         print(
@@ -534,22 +628,26 @@ async def chat(req: ChatRequest, request: Request):
             request.session["harvest_token"] = valid_token
             harvest_access_token = valid_token["access_token"]
 
-    # Build system prompt dynamically with Harvest token (for projects list)
-    system_prompt = build_system_prompt(harvest_access_token)
-
-    # Add notes if access is missing
+    # Transient runtime notes — appended to the per-user (uncached) block so they
+    # don't invalidate the cached master catalog.
+    runtime_notes: List[str] = []
     if not has_google_access:
-        system_prompt += (
-            "\n\nNOTE: The user has not granted Google Workspace access. "
+        runtime_notes.append(
+            "NOTE: The user has not granted Google Workspace access. "
             "If they ask to scan emails, calendar, or drive, tell them to sign out "
             "and sign back in to grant the required permissions."
         )
-
     if not harvest_access_token:
-        system_prompt += (
-            "\n\nNOTE: The user has not connected their Harvest account. "
+        runtime_notes.append(
+            "NOTE: The user has not connected their Harvest account. "
             "If they try to log time, tell them to click 'Connect Harvest' first."
         )
+
+    system_blocks = build_system_prompt(
+        user_email=user.get("email"),
+        harvest_access_token=harvest_access_token,
+        notes=runtime_notes,
+    )
 
     # Only offer tools if Google access is available
     tools_param = TOOLS if has_google_access else None
@@ -558,20 +656,24 @@ async def chat(req: ChatRequest, request: Request):
     iterations = 0
     final_text = ""
     response = None
+    chat_start_ts = time.time()
+    tool_calls_log: List[Dict] = []
+    last_usage: Dict = {}
 
     while iterations < MAX_TOOL_ITERATIONS:
         iterations += 1
 
         api_kwargs = {
-            "model": "claude-sonnet-4-5-20250929",
+            "model": CHAT_MODEL,
             "max_tokens": 2048,
-            "system": system_prompt,
+            "system": system_blocks,
             "messages": messages,
         }
         if tools_param:
             api_kwargs["tools"] = tools_param
 
-        response = client.messages.create(**api_kwargs)
+        response = await client.messages.create(**api_kwargs)
+        last_usage = training_log.usage_metrics(response)
 
         if response.stop_reason == "end_turn":
             # Claude is done — extract text
@@ -602,6 +704,11 @@ async def chat(req: ChatRequest, request: Request):
             for block in response.content:
                 if block.type == "tool_use":
                     print(f"  Tool call [{iterations}]: {block.name}({block.input})")
+                    tool_calls_log.append({
+                        "iteration": iterations,
+                        "name": block.name,
+                        "input": block.input,
+                    })
 
                     if not has_google_access:
                         result_text = (
@@ -657,6 +764,52 @@ async def chat(req: ChatRequest, request: Request):
     for entry_data in entries_data:
         entry = save_entry_everywhere(req.user, entry_data, user_email=user.get("email", ""))
         created_entries.append(entry)
+
+    # Capture this round for fine-tuning + analytics. Stash the interaction id on
+    # each created entry so future approve/edit/delete events can reference it.
+    profile_snapshot = user_profiles.get_profile(user.get("email", ""))
+    interaction_id = training_log.log(
+        kind="chat",
+        user_email=user.get("email", ""),
+        user_name=user.get("name", ""),
+        input_payload={
+            "message": req.message,
+            "history_len": len(req.history),
+            "model": CHAT_MODEL,
+            "system_prompt_hash": training_log.prompt_signature(system_blocks),
+            "has_google_access": has_google_access,
+            "has_harvest_access": bool(harvest_access_token),
+        },
+        context={
+            "dialect": profile_snapshot.get("dialect"),
+            "assigned_project_count": len(profile_snapshot.get("assigned_project_codes") or []),
+            "common_tasks_count": len(profile_snapshot.get("common_tasks") or []),
+            "recent_corrections_count": len(profile_snapshot.get("recent_corrections") or []),
+        },
+        output={
+            "response_text": display_text,
+            "tool_calls": tool_calls_log,
+            "iterations": iterations,
+            "stop_reason": getattr(response, "stop_reason", None) if response else None,
+            "entries_created": [
+                {
+                    "id": e.get("id"),
+                    "client": e.get("client"),
+                    "project_code": e.get("project_code"),
+                    "project_name": e.get("project_name"),
+                    "hours": e.get("hours"),
+                    "status": e.get("status"),
+                }
+                for e in created_entries
+            ],
+        },
+        metrics={
+            "latency_ms": int((time.time() - chat_start_ts) * 1000),
+            **last_usage,
+        },
+    )
+    for e in created_entries:
+        e["_interaction_id"] = interaction_id
 
     return ChatResponse(response=display_text, entries_created=created_entries)
 
@@ -727,6 +880,20 @@ async def approve_all_entries(request: Request):
         if harvest_entry:
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
             sheets_sync.update_entry_status_in_sheet(entry["id"], "Approved")
+            user_profiles.record_approval(user_email, entry)
+            training_log.log(
+                kind="approve",
+                user_email=user_email,
+                user_name=user.get("name", ""),
+                input_payload={"entry_id": entry["id"], "via": "approve_all"},
+                output={
+                    "client": entry.get("client"),
+                    "project_code": entry.get("project_code"),
+                    "project_name": entry.get("project_name"),
+                    "hours": entry.get("hours"),
+                    "harvest_id": harvest_entry["id"],
+                },
+            )
             results.append({"id": entry["id"], "approved": True})
         else:
             results.append({"id": entry["id"], "approved": False})
@@ -755,24 +922,65 @@ async def delete_entry(entry_id: str, request: Request):
     # Check if entry has a Harvest ID before deleting
     entries = harvest_mock.get_entries()
     harvest_id = None
+    deleted_snapshot: Dict = {}
     for e in entries:
-        if e.get("id") == entry_id and e.get("harvest_id"):
-            harvest_id = e["harvest_id"]
+        if e.get("id") == entry_id:
+            deleted_snapshot = {
+                "client": e.get("client"),
+                "project_code": e.get("project_code"),
+                "project_name": e.get("project_name"),
+                "hours": e.get("hours"),
+                "status": e.get("status"),
+            }
+            if e.get("harvest_id"):
+                harvest_id = e["harvest_id"]
             break
     success = harvest_mock.delete_entry(entry_id)
     if success:
         sheets_sync.delete_entry_from_sheet(entry_id)
         if harvest_id:
             harvest_api.delete_time_entry(int(harvest_id), harvest_access_token)
+        # Training-data signal: rejection of an AI-suggested or user-created entry
+        user = get_current_user(request) or {}
+        training_log.log(
+            kind="delete",
+            user_email=user.get("email", ""),
+            user_name=user.get("name", ""),
+            input_payload={"entry_id": entry_id},
+            output=deleted_snapshot,
+        )
     return {"success": success}
 
 
 @app.put("/api/entries/{entry_id}")
 async def update_entry(entry_id: str, request: Request):
     body = await request.json()
+    # Snapshot the entry before mutating so we can capture the diff as training signal
+    pre_entry: Dict = {}
+    for e in harvest_mock.get_entries():
+        if e.get("id") == entry_id:
+            pre_entry = dict(e)
+            break
+
     entry = harvest_mock.update_entry(entry_id, **body)
     if entry and "status" in body:
         sheets_sync.update_entry_status_in_sheet(entry_id, body["status"])
+
+    if entry:
+        diff = {
+            k: {"from": pre_entry.get(k), "to": entry.get(k)}
+            for k in body.keys()
+            if pre_entry.get(k) != entry.get(k)
+        }
+        if diff:
+            user = get_current_user(request) or {}
+            training_log.log(
+                kind="edit",
+                user_email=user.get("email", ""),
+                user_name=user.get("name", ""),
+                input_payload={"entry_id": entry_id, "patch": body},
+                output={"diff": diff},
+            )
     return {"entry": entry, "success": entry is not None}
 
 
@@ -854,6 +1062,22 @@ async def approve_entry(entry_id: str, request: Request):
     harvest_mock.update_entry(entry_id, status="Approved", harvest_id=harvest_entry["id"])
     # Update Google Sheet
     sheets_sync.update_entry_status_in_sheet(entry_id, "Approved")
+    # Per-user learning: bump common_tasks frequency + prepend to recent entries
+    user_profiles.record_approval(user_email, entry)
+    # Training-data signal: positive label on the AI's original suggestion
+    training_log.log(
+        kind="approve",
+        user_email=user_email,
+        user_name=user.get("name", ""),
+        input_payload={"entry_id": entry_id},
+        output={
+            "client": entry.get("client"),
+            "project_code": entry.get("project_code"),
+            "project_name": entry.get("project_name"),
+            "hours": entry.get("hours"),
+            "harvest_id": harvest_entry["id"],
+        },
+    )
 
     return {"success": True, "harvest_id": harvest_entry["id"]}
 
@@ -928,10 +1152,10 @@ async def suggest_from_calendar(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": calendar_prompt})
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+    response = await client.messages.create(
+        model=CHAT_MODEL,
         max_tokens=1024,
-        system=build_system_prompt(),
+        system=build_system_prompt(user_email=user.get("email")),
         messages=messages,
     )
 
@@ -949,6 +1173,377 @@ async def suggest_from_calendar(request: Request):
         created_entries.append(entry)
 
     return ChatResponse(response=display_text, entries_created=created_entries)
+
+
+# --- 7-Day Calendar Summary (categorize meetings → projects) ---
+
+CATEGORIZE_TOOL = {
+    "name": "categorize_events",
+    "description": (
+        "Return structured Harvest project/task categorizations for the supplied "
+        "calendar events. Must return one entry per event_index."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "categorizations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "event_index": {"type": "integer"},
+                        "project_code": {
+                            "type": "string",
+                            "description": (
+                                "Project+task code matching one of the candidates "
+                                "(e.g. '38887238-67'). Empty string if confidence "
+                                "is 'unknown'."
+                            ),
+                        },
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low", "unknown"],
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Under 30 words. Why this project/task?",
+                        },
+                    },
+                    "required": ["event_index", "project_code", "confidence", "reasoning"],
+                },
+            },
+        },
+        "required": ["categorizations"],
+    },
+}
+
+
+def _flatten_project_candidates(harvest_access_token: Optional[str], assigned_codes: set) -> List[Dict]:
+    """Flatten the project list into (code, client, task_name, is_assigned) rows
+    for Claude. Assigned-project tasks are ranked first so the model sees the
+    user's normal work before the 51-project firehose."""
+    projects = get_projects(harvest_access_token)
+    flat = []
+    for p in projects:
+        for t in p["tasks"]:
+            project_id_part = t["code"].split("-")[0] if "-" in t["code"] else ""
+            flat.append({
+                "code": t["code"],
+                "client": p["project"],
+                "task_name": t["name"],
+                "is_assigned": project_id_part in assigned_codes,
+            })
+    flat.sort(key=lambda r: (not r["is_assigned"], r["client"]))
+    return flat
+
+
+def _enrich_event(ev: Dict, cat: Dict, candidates_by_code: Dict[str, Dict]) -> Dict:
+    """Combine a raw calendar event with its categorization + project lookup."""
+    code = cat.get("project_code", "")
+    candidate = candidates_by_code.get(code, {})
+    return {
+        "id": ev["id"],
+        "date": ev["date"],
+        "start": ev["start"],
+        "end": ev["end"],
+        "duration_hours": ev["duration_hours"],
+        "title": ev["summary"],
+        "attendees": ev["attendees"][:5],
+        "is_recurring": ev["is_recurring"],
+        "recurring_event_id": ev["recurring_event_id"],
+        "suggested_project_code": code,
+        "suggested_client": candidate.get("client", ""),
+        "suggested_task_name": candidate.get("task_name", ""),
+        "confidence": cat.get("confidence", "unknown"),
+        "reasoning": cat.get("reasoning", ""),
+        "was_declined": ev.get("was_declined", False),
+    }
+
+
+async def categorize_events(
+    events: List[Dict],
+    user_email: str,
+    harvest_access_token: Optional[str],
+) -> List[Dict]:
+    """One Claude call → constrained tool_use output → list aligned to events."""
+    if not events:
+        return []
+
+    profile = user_profiles.get_profile(user_email)
+    assigned_codes = set(profile.get("assigned_project_codes") or [])
+    candidates = _flatten_project_candidates(harvest_access_token, assigned_codes)
+
+    # Compact event list — keep it small. Use attendee email *domains* only
+    # (that's the categorization signal; full PII isn't needed in the prompt).
+    events_compact = []
+    for i, ev in enumerate(events):
+        domains = sorted({
+            e.split("@", 1)[1].lower()
+            for e in ev.get("attendee_emails", [])
+            if "@" in e
+        })
+        events_compact.append({
+            "event_index": i,
+            "date": ev["date"],
+            "start": ev["start"],
+            "duration_hours": ev["duration_hours"],
+            "title": ev["summary"],
+            "attendee_domains": domains,
+            "is_recurring": ev["is_recurring"],
+        })
+
+    user_prompt = (
+        f"Categorize these {len(events)} calendar events to a Harvest project+task code.\n\n"
+        f"EVENTS:\n{json.dumps(events_compact, indent=2)}\n\n"
+        f"PROJECT CANDIDATES (is_assigned=true means the user normally works on this):\n"
+        f"{json.dumps(candidates, indent=2)}\n\n"
+        "Return one categorization per event using the categorize_events tool.\n\n"
+        "Confidence rules:\n"
+        "- high: attendee domain matches client name OR exact title match for assigned project\n"
+        "- medium: title keyword strongly suggests project, no domain confirmation\n"
+        "- low: weak/ambiguous signal\n"
+        "- unknown: no signal — return empty project_code\n\n"
+        "Prefer is_assigned=true projects when ambiguous. Internal meetings "
+        "(standup, all-hands, 1:1 with Thrive teammates) → use the 'Internal' "
+        "project if present, otherwise mark unknown."
+    )
+
+    response = await client.messages.create(
+        model=CHAT_MODEL,
+        max_tokens=4096,
+        system=build_system_prompt(
+            user_email=user_email,
+            harvest_access_token=harvest_access_token,
+        ),
+        tools=[CATEGORIZE_TOOL],
+        tool_choice={"type": "tool", "name": "categorize_events"},
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+
+    raw_cats: List[Dict] = []
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "categorize_events":
+            raw_cats = block.input.get("categorizations", [])
+            break
+
+    cat_by_idx = {c.get("event_index"): c for c in raw_cats}
+    candidates_by_code = {c["code"]: c for c in candidates}
+
+    enriched = []
+    for i, ev in enumerate(events):
+        cat = cat_by_idx.get(i, {
+            "event_index": i,
+            "project_code": "",
+            "confidence": "unknown",
+            "reasoning": "Model returned no categorization for this event.",
+        })
+        enriched.append(_enrich_event(ev, cat, candidates_by_code))
+    return enriched
+
+
+@app.get("/api/calendar/weekly-summary")
+async def calendar_weekly_summary(request: Request, weeks: int = 1):
+    """Pull the user's last N weeks of meetings, categorize each via Claude, and
+    return them grouped by day with confidence dots so the UI can surface only
+    the rows that need user review."""
+    user = get_current_user(request)
+    if not user:
+        return {"error": "not_authenticated", "days": []}
+
+    weeks = max(1, min(weeks, 4))  # cap at 4 weeks to keep one Claude call sane
+
+    google_token = request.session.get("google_token")
+    if not google_token or not google_token.get("access_token"):
+        return {"error": "no_calendar_access", "days": []}
+
+    valid_token = calendar_sync.ensure_valid_token(google_token)
+    if not valid_token:
+        return {"error": "token_expired", "days": []}
+    request.session["google_token"] = valid_token
+
+    today = date.today()
+    date_from = (today - timedelta(days=weeks * 7 - 1)).isoformat()
+    date_to = today.isoformat()
+
+    events = calendar_sync.search_events(
+        access_token=valid_token["access_token"],
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    # Get Harvest token (optional) so we can show user-specific project candidates
+    harvest_token = request.session.get("harvest_token")
+    harvest_access_token = None
+    if harvest_token and harvest_token.get("access_token"):
+        valid_h = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_h:
+            request.session["harvest_token"] = valid_h
+            harvest_access_token = valid_h["access_token"]
+
+    cat_start_ts = time.time()
+    enriched = await categorize_events(events, user["email"], harvest_access_token)
+    cat_latency_ms = int((time.time() - cat_start_ts) * 1000)
+
+    # Build the candidates list once for the frontend dropdowns (so users can
+    # re-categorize low/unknown rows without a second round-trip per event).
+    profile = user_profiles.get_profile(user["email"])
+    assigned_codes = set(profile.get("assigned_project_codes") or [])
+    candidates = _flatten_project_candidates(harvest_access_token, assigned_codes)
+
+    # Group by day, oldest first
+    by_day: Dict[str, List[Dict]] = {}
+    for ev in enriched:
+        by_day.setdefault(ev["date"], []).append(ev)
+
+    days = []
+    for d in sorted(by_day.keys()):
+        evs = by_day[d]
+        days.append({
+            "date": d,
+            "day_label": datetime.strptime(d, "%Y-%m-%d").strftime("%a"),
+            "hours_total": round(sum(e["duration_hours"] for e in evs), 2),
+            "events": evs,
+        })
+
+    ready = sum(
+        1 for ev in enriched
+        if ev["confidence"] in ("high", "medium") and ev["suggested_project_code"]
+    )
+    needs_review = len(enriched) - ready
+
+    confidence_breakdown = {"high": 0, "medium": 0, "low": 0, "unknown": 0}
+    for ev in enriched:
+        confidence_breakdown[ev.get("confidence", "unknown")] = (
+            confidence_breakdown.get(ev.get("confidence", "unknown"), 0) + 1
+        )
+
+    training_log.log(
+        kind="weekly_categorize",
+        user_email=user["email"],
+        user_name=user.get("name", ""),
+        input_payload={
+            "weeks": weeks,
+            "date_from": date_from,
+            "date_to": date_to,
+            "event_count": len(events),
+            "model": CHAT_MODEL,
+        },
+        context={
+            "assigned_project_count": len(assigned_codes),
+            "confidence_breakdown": confidence_breakdown,
+        },
+        output={
+            "events": [
+                {
+                    "id": ev["id"],
+                    "title": ev["title"],
+                    "date": ev["date"],
+                    "suggested_project_code": ev["suggested_project_code"],
+                    "suggested_client": ev["suggested_client"],
+                    "suggested_task_name": ev["suggested_task_name"],
+                    "confidence": ev["confidence"],
+                    "reasoning": ev["reasoning"],
+                }
+                for ev in enriched
+            ],
+        },
+        metrics={"latency_ms": cat_latency_ms},
+    )
+
+    return {
+        "range": {"from": date_from, "to": date_to, "weeks": weeks},
+        "totals": {
+            "events": len(enriched),
+            "hours": round(sum(e["duration_hours"] for e in enriched), 2),
+            "ready": ready,
+            "needs_review": needs_review,
+        },
+        "days": days,
+        "candidates": candidates,
+    }
+
+
+class CategorizeRequest(BaseModel):
+    event_id: str
+    event_date: str
+    event_title: str
+    event_duration_hours: float
+    project_code: str
+    client: str
+    task_name: str
+    create_draft: bool = True
+    original_client: Optional[str] = ""
+    original_task_name: Optional[str] = ""
+
+
+@app.post("/api/calendar/categorize")
+async def calendar_categorize(req: CategorizeRequest, request: Request):
+    """Record a user's manual categorization of a calendar event. If
+    create_draft=true, also creates a Draft entry. If this corrects a previous
+    AI suggestion, records the diff in the user's profile so the next prompt
+    can avoid repeating the miss."""
+    user = get_current_user(request)
+    if not user:
+        return {"success": False, "error": "not_authenticated"}
+
+    user_email = user.get("email", "")
+
+    # Record the correction (if it's actually a correction)
+    if req.original_client and (
+        req.original_client.lower() != req.client.lower()
+        or (req.original_task_name or "").lower() != req.task_name.lower()
+    ):
+        user_profiles.record_correction(
+            email=user_email,
+            user_phrase=f"Calendar event: {req.event_title}",
+            original={"client": req.original_client, "project_name": req.original_task_name or ""},
+            corrected={"client": req.client, "project_name": req.task_name},
+        )
+
+    created_entry = None
+    if req.create_draft:
+        entry_data = {
+            "client": req.client,
+            "project_code": req.project_code,
+            "project_name": req.task_name,
+            "task": req.task_name,
+            "hours": req.event_duration_hours,
+            "notes": f"Meeting: {req.event_title}",
+            "date": req.event_date,
+            "status": "Draft",
+        }
+        created_entry = save_entry_everywhere(
+            user.get("name", user_email),
+            entry_data,
+            user_email=user_email,
+        )
+
+    training_log.log(
+        kind="categorize_correction" if req.original_client else "categorize_confirm",
+        user_email=user_email,
+        user_name=user.get("name", ""),
+        input_payload={
+            "event_id": req.event_id,
+            "event_title": req.event_title,
+            "event_date": req.event_date,
+            "event_duration_hours": req.event_duration_hours,
+        },
+        output={
+            "chosen": {
+                "project_code": req.project_code,
+                "client": req.client,
+                "task_name": req.task_name,
+            },
+            "original_suggestion": {
+                "client": req.original_client or "",
+                "task_name": req.original_task_name or "",
+            },
+            "create_draft": req.create_draft,
+            "entry_id": (created_entry or {}).get("id"),
+        },
+    )
+
+    return {"success": True, "entry": created_entry}
 
 
 @app.post("/api/drive/suggest")
@@ -997,10 +1592,10 @@ async def suggest_from_drive(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": drive_prompt})
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+    response = await client.messages.create(
+        model=CHAT_MODEL,
         max_tokens=1024,
-        system=build_system_prompt(),
+        system=build_system_prompt(user_email=user.get("email")),
         messages=messages,
     )
 
@@ -1065,10 +1660,10 @@ async def suggest_from_gmail(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": gmail_prompt})
 
-    response = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+    response = await client.messages.create(
+        model=CHAT_MODEL,
         max_tokens=1024,
-        system=build_system_prompt(),
+        system=build_system_prompt(user_email=user.get("email")),
         messages=messages,
     )
 
@@ -1094,6 +1689,38 @@ async def get_me(request: Request):
     has_calendar = bool(request.session.get("google_token", {}).get("access_token"))
     has_harvest = bool(request.session.get("harvest_token", {}).get("access_token"))
     return {"authenticated": True, "has_calendar": has_calendar, "has_harvest": has_harvest, **user}
+
+
+# --- Task Management Board (LOCAL demo — gated behind LOCAL_DEMO_ONLY=1) ---
+
+if LOCAL_DEMO_ONLY:
+    @app.get("/dashboard")
+    async def dashboard_redirect(request: Request):
+        return RedirectResponse(url="/board")
+
+    @app.get("/board", response_class=HTMLResponse)
+    async def board_view(request: Request):
+        """Overall Board: 8 initiatives card grid + Gantt + Calendar tabs."""
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse(url="/login")
+        return templates.TemplateResponse("board.html", {"request": request, "user": user})
+
+    @app.get("/board/project/{project_name}", response_class=HTMLResponse)
+    async def project_view(request: Request, project_name: str):
+        """Drill-down: tasks for a single initiative."""
+        user = get_current_user(request)
+        if not user:
+            return RedirectResponse(url="/login")
+        project = tasks.get_project(project_name)
+        if not project:
+            return RedirectResponse(url="/board")
+        return templates.TemplateResponse(
+            "project.html",
+            {"request": request, "user": user, "project": project},
+        )
+
+    app.include_router(tasks_routes.router)
 
 
 if __name__ == "__main__":

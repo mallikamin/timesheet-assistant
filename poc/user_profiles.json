@@ -1,0 +1,66 @@
+{
+  "hugh@thrivepr.co.nz": {
+    "_notes_for_malik": "Replace email with Hugh's real Thrive address (likely .co.nz domain if Auckland-based). NZ English dialect. Common Kiwi slang preloaded \u2014 refine after stress test starts.",
+    "assigned_project_codes": [],
+    "common_tasks": [],
+    "dialect": "en-NZ-Auckland",
+    "display_name": "Hugh",
+    "email": "hugh@thrivepr.co.nz",
+    "harvest_user_id": null,
+    "name_aliases": {},
+    "preferred_response_style": "terse",
+    "recent_corrections": [],
+    "recent_entries_summary": [],
+    "updated_at": null,
+    "vocabulary_hints": [
+      "sweet as",
+      "chur",
+      "jandals",
+      "yeah nah",
+      "stoked",
+      "she'll be right"
+    ]
+  },
+  "michael@thrivepr.com.au": {
+    "_notes_for_malik": "Replace email with Michael's real Thrive address. Default to verbose style; if he prefers terse responses, change preferred_response_style. Auto-bootstrap will fill projects on Harvest OAuth.",
+    "assigned_project_codes": [],
+    "common_tasks": [],
+    "dialect": "en-AU-Brisbane",
+    "display_name": "Michael",
+    "email": "michael@thrivepr.com.au",
+    "harvest_user_id": null,
+    "name_aliases": {},
+    "preferred_response_style": "verbose",
+    "recent_corrections": [],
+    "recent_entries_summary": [],
+    "updated_at": null,
+    "vocabulary_hints": [
+      "heaps",
+      "keen",
+      "reckon",
+      "no worries"
+    ]
+  },
+  "miles@thrivepr.com.au": {
+    "_notes_for_malik": "Replace email with Miles's real Thrive address. Auto-bootstrap will fill assigned_project_codes + harvest_user_id when he completes Harvest OAuth. Update vocabulary_hints + dialect after observing his first few sessions.",
+    "assigned_project_codes": [],
+    "common_tasks": [],
+    "dialect": "en-AU-Sydney",
+    "display_name": "Miles",
+    "email": "miles@thrivepr.com.au",
+    "harvest_user_id": null,
+    "name_aliases": {},
+    "preferred_response_style": "terse",
+    "recent_corrections": [],
+    "recent_entries_summary": [],
+    "updated_at": null,
+    "vocabulary_hints": [
+      "arvo",
+      "sanger",
+      "servo",
+      "maccas",
+      "no dramas",
+      "fair dinkum"
+    ]
+  }
+}
