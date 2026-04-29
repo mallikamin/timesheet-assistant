@@ -1666,12 +1666,19 @@ async def suggest_from_calendar(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": calendar_prompt})
 
-    response = await client.messages.create(
-        model=CHAT_MODEL,
-        max_tokens=1024,
-        system=build_system_prompt(user_email=user.get("email")),
-        messages=messages,
-    )
+    try:
+        response = await client.messages.create(
+            model=CHAT_MODEL,
+            max_tokens=1024,
+            system=build_system_prompt(user_email=user.get("email")),
+            messages=messages,
+        )
+    except Exception as anth_err:
+        print(f"[ERR] /api/calendar/suggest anthropic call: {type(anth_err).__name__}: {str(anth_err)[:500]}")
+        return ChatResponse(
+            response=_user_friendly_anthropic_error(anth_err),
+            entries_created=[],
+        )
 
     ai_text = response.content[0].text
     display_text, entries_data = parse_entries_from_response(ai_text)
@@ -1822,17 +1829,32 @@ async def categorize_events(
         "project if present, otherwise mark unknown."
     )
 
-    response = await client.messages.create(
-        model=CHAT_MODEL,
-        max_tokens=4096,
-        system=build_system_prompt(
-            user_email=user_email,
-            harvest_access_token=harvest_access_token,
-        ),
-        tools=[CATEGORIZE_TOOL],
-        tool_choice={"type": "tool", "name": "categorize_events"},
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    try:
+        response = await client.messages.create(
+            model=CHAT_MODEL,
+            max_tokens=4096,
+            system=build_system_prompt(
+                user_email=user_email,
+                harvest_access_token=harvest_access_token,
+            ),
+            tools=[CATEGORIZE_TOOL],
+            tool_choice={"type": "tool", "name": "categorize_events"},
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+    except Exception as anth_err:
+        # Fall back to "unknown" categorizations for every event so the UI
+        # can still render the meeting list — user can manually pick projects.
+        print(f"[ERR] categorize_events anthropic call: {type(anth_err).__name__}: {str(anth_err)[:500]}")
+        candidates_by_code = {c["code"]: c for c in candidates}
+        return [
+            _enrich_event(ev, {
+                "event_index": i,
+                "project_code": "",
+                "confidence": "unknown",
+                "reasoning": _user_friendly_anthropic_error(anth_err),
+            }, candidates_by_code)
+            for i, ev in enumerate(events)
+        ]
 
     raw_cats: List[Dict] = []
     for block in response.content:
@@ -2116,12 +2138,19 @@ async def suggest_from_drive(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": drive_prompt})
 
-    response = await client.messages.create(
-        model=CHAT_MODEL,
-        max_tokens=1024,
-        system=build_system_prompt(user_email=user.get("email")),
-        messages=messages,
-    )
+    try:
+        response = await client.messages.create(
+            model=CHAT_MODEL,
+            max_tokens=1024,
+            system=build_system_prompt(user_email=user.get("email")),
+            messages=messages,
+        )
+    except Exception as anth_err:
+        print(f"[ERR] /api/drive/suggest anthropic call: {type(anth_err).__name__}: {str(anth_err)[:500]}")
+        return ChatResponse(
+            response=_user_friendly_anthropic_error(anth_err),
+            entries_created=[],
+        )
 
     ai_text = response.content[0].text
     display_text, entries_data = parse_entries_from_response(ai_text)
@@ -2184,12 +2213,19 @@ async def suggest_from_gmail(request: Request):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": gmail_prompt})
 
-    response = await client.messages.create(
-        model=CHAT_MODEL,
-        max_tokens=1024,
-        system=build_system_prompt(user_email=user.get("email")),
-        messages=messages,
-    )
+    try:
+        response = await client.messages.create(
+            model=CHAT_MODEL,
+            max_tokens=1024,
+            system=build_system_prompt(user_email=user.get("email")),
+            messages=messages,
+        )
+    except Exception as anth_err:
+        print(f"[ERR] /api/gmail/suggest anthropic call: {type(anth_err).__name__}: {str(anth_err)[:500]}")
+        return ChatResponse(
+            response=_user_friendly_anthropic_error(anth_err),
+            entries_created=[],
+        )
 
     ai_text = response.content[0].text
     display_text, entries_data = parse_entries_from_response(ai_text)
