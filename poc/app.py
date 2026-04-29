@@ -167,6 +167,41 @@ client = anthropic.AsyncAnthropic(
 
 CHAT_MODEL = "claude-haiku-4-5-20251001"
 
+
+def _user_friendly_anthropic_error(exc: Exception) -> str:
+    """Classify an Anthropic SDK exception and return a clean user-facing
+    message. Critically: detects Cloudflare bot-challenge HTML (which the
+    SDK can't parse and lets bubble up as a JSON-decode failure) and shows
+    a helpful message instead of dumping HTML into the chat bubble."""
+    msg = str(exc)
+    lower = msg.lower()
+
+    # Cloudflare managed challenge: api.anthropic.com is treating our outbound
+    # IP as bot-like and serving the JS challenge page in place of the API
+    # response. Render free tier shares outbound IPs and this can happen if a
+    # neighboring tenant misbehaves. Restarting the Render worker often helps
+    # by landing the process on a different IP from the pool.
+    if "just a moment" in lower or "challenge-platform" in lower or "<!doctype html" in lower:
+        return (
+            "Our AI service is temporarily unreachable from this server. "
+            "Network protection is challenging the request — usually clears "
+            "in a few minutes. Please try again shortly."
+        )
+
+    err_type = type(exc).__name__
+    if err_type in ("APIConnectionError", "APIConnectionTimeoutError", "APITimeoutError"):
+        return "Couldn't reach the AI service (network issue). Please try again."
+    if err_type == "RateLimitError":
+        return "AI service is rate-limited right now. Please wait 30s and retry."
+    if err_type == "AuthenticationError":
+        return "AI service authentication failed. Please contact your admin."
+    if err_type in ("APIStatusError", "BadRequestError"):
+        # API returned a structured error — show a short version
+        return f"AI service rejected the request: {msg[:140]}"
+    if err_type == "InternalServerError":
+        return "AI service is having an issue right now. Please try again in a minute."
+    return "Something went wrong reaching the AI service. Please try again."
+
 PILOT_USERS = ["Tariq Munir", "Malik Amin", "Jawad Saleem"]
 
 SYSTEM_PROMPT_TEMPLATE = """You are a friendly, efficient timesheet assistant for a PR and communications agency based in Australia/New Zealand. Users tell you what they worked on in natural language (voice or text), and you help log their time into Harvest.
@@ -872,7 +907,18 @@ async def chat(req: ChatRequest, request: Request):
         if tools_param:
             api_kwargs["tools"] = tools_param
 
-        response = await client.messages.create(**api_kwargs)
+        try:
+            response = await client.messages.create(**api_kwargs)
+        except Exception as anth_err:
+            # Anthropic side failure (Cloudflare challenge, rate limit, etc.)
+            # — return a clean JSON error instead of letting FastAPI emit
+            # an HTML 500 that the frontend can't JSON.parse.
+            print(f"[ERR] /api/chat anthropic call: {type(anth_err).__name__}: {str(anth_err)[:500]}")
+            return ChatResponse(
+                response=_user_friendly_anthropic_error(anth_err),
+                entries_created=[],
+            )
+
         last_usage = training_log.usage_metrics(response)
 
         if response.stop_reason == "end_turn":
@@ -1266,8 +1312,10 @@ async def chat_stream(req: ChatRequest, request: Request):
                 "entries_created": created_entries,
             })
         except Exception as e:
-            print(f"[ERR] chat_stream: {e}")
-            yield _sse({"type": "error", "message": str(e)})
+            # Print full error to Render logs for debugging; show clean
+            # user-facing message in the chat bubble.
+            print(f"[ERR] chat_stream: {type(e).__name__}: {str(e)[:500]}")
+            yield _sse({"type": "error", "message": _user_friendly_anthropic_error(e)})
 
     return StreamingResponse(
         gen(),
