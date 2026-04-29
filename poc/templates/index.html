@@ -334,6 +334,16 @@
             align-self: flex-start;
             border-bottom-left-radius: 4px;
         }
+        .message.assistant.streaming::after {
+            content: '\25ae';
+            display: inline-block;
+            margin-left: 2px;
+            opacity: 0.6;
+            animation: streamcursor 1s steps(2, start) infinite;
+        }
+        @keyframes streamcursor {
+            to { opacity: 0.0; }
+        }
         .message.user {
             background: #1a1a2e;
             color: white;
@@ -780,6 +790,9 @@ What have you been up to?</div>
         if (el) el.remove();
     }
 
+    // Streaming-aware sendMessage. Tries /api/chat/stream first (SSE,
+    // tokens render as they arrive). If the stream errors mid-flight or
+    // the browser doesn't support ReadableStream, falls back to /api/chat.
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text || isProcessing) return;
@@ -789,8 +802,117 @@ What have you been up to?</div>
         chatInput.value = '';
 
         addMessage('user', text);
-        showTyping();
 
+        const supportsStream = typeof window.ReadableStream !== 'undefined' && !!window.TextDecoder;
+        let succeeded = false;
+
+        if (supportsStream) {
+            try {
+                await sendMessageStreaming(text);
+                succeeded = true;
+            } catch (err) {
+                console.warn('streaming failed, falling back to JSON:', err);
+            }
+        }
+
+        if (!succeeded) {
+            await sendMessageJson(text);
+        }
+
+        isProcessing = false;
+        sendBtn.disabled = false;
+        chatInput.focus();
+    }
+
+    async function sendMessageStreaming(text) {
+        // Create the assistant message bubble we'll append text deltas into.
+        const bubble = document.createElement('div');
+        bubble.className = 'message assistant streaming';
+        bubble.textContent = '';
+        chatMessages.appendChild(bubble);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        const res = await fetch('/api/chat/stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user: currentUserName,
+                message: text,
+                history: conversationHistory,
+            }),
+        });
+
+        if (!res.ok || !res.body) {
+            bubble.remove();
+            throw new Error(`stream HTTP ${res.status}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let finalResponse = null;
+        let finalEntries = [];
+        let receivedAnyText = false;
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // SSE events are delimited by blank lines
+            let idx;
+            while ((idx = buffer.indexOf('\n\n')) !== -1) {
+                const rawEvent = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+                const dataLines = rawEvent.split('\n').filter(l => l.startsWith('data: ')).map(l => l.slice(6));
+                if (!dataLines.length) continue;
+                let payload;
+                try {
+                    payload = JSON.parse(dataLines.join('\n'));
+                } catch (_) {
+                    continue;
+                }
+
+                if (payload.type === 'text') {
+                    bubble.textContent += payload.delta;
+                    receivedAnyText = true;
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                } else if (payload.type === 'tool') {
+                    addSystemMessage(`Scanning your ${payload.name.replace('scan_', '')}...`);
+                } else if (payload.type === 'done') {
+                    finalResponse = payload.response;
+                    finalEntries = payload.entries_created || [];
+                } else if (payload.type === 'error') {
+                    bubble.remove();
+                    throw new Error(payload.message || 'stream error');
+                }
+            }
+        }
+
+        bubble.classList.remove('streaming');
+
+        // Replace streamed text with the parsed display_text (drops ENTRY blocks)
+        if (finalResponse !== null && finalResponse !== bubble.textContent) {
+            bubble.textContent = finalResponse;
+        }
+        if (!receivedAnyText && finalResponse) {
+            bubble.textContent = finalResponse;
+        }
+
+        conversationHistory.push({ role: 'user', content: text });
+        conversationHistory.push({ role: 'assistant', content: finalResponse || bubble.textContent });
+
+        if (finalEntries.length > 0) {
+            for (const entry of finalEntries) {
+                const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
+                addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+            }
+            refreshEntries();
+        }
+    }
+
+    async function sendMessageJson(text) {
+        showTyping();
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
@@ -805,14 +927,11 @@ What have you been up to?</div>
             const data = await res.json();
             hideTyping();
 
-            // Update conversation history
             conversationHistory.push({ role: 'user', content: text });
             conversationHistory.push({ role: 'assistant', content: data.response });
 
-            // Show AI response
             addMessage('assistant', data.response);
 
-            // Show entry creation notifications
             if (data.entries_created && data.entries_created.length > 0) {
                 for (const entry of data.entries_created) {
                     const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
@@ -825,10 +944,6 @@ What have you been up to?</div>
             addMessage('assistant', 'Sorry, something went wrong. Please try again.');
             console.error(err);
         }
-
-        isProcessing = false;
-        sendBtn.disabled = false;
-        chatInput.focus();
     }
 
     // --- Entries Panel ---
