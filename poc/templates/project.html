@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{ project.name }} — Thrive Task Management</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Figtree',-apple-system,sans-serif; background:#F4F5F8; color:#1D1D1F; }
+
+.header { background:#fff; border-bottom:1px solid #E6E9EF; padding:12px 32px;
+  display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; }
+.thrive-logo { display:inline-flex; flex-direction:column; line-height:1; }
+.thrive-word { font-family:'Figtree',sans-serif; font-style:italic; font-weight:800;
+  font-size:28px; color:#5B3A8F; letter-spacing:-0.6px; position:relative; }
+.thrive-word .star { color:#F4C430; font-size:14px; font-style:normal; font-weight:700;
+  position:relative; top:-10px; margin-left:1px; }
+.thrive-tag { font-size:8.5px; letter-spacing:2.6px; color:#9a9fab; font-weight:500;
+  margin-top:5px; text-transform:lowercase; }
+.header-title { margin-left:22px; padding-left:22px; border-left:1px solid #E6E9EF;
+  font-size:15px; font-weight:600; color:#323338; }
+.header-actions a { text-decoration:none; padding:8px 14px; background:#F4A623; color:#1A1A2E;
+  border-radius:6px; font-size:13px; font-weight:600; margin-right:10px; }
+.avatar { width:34px; height:34px; border-radius:50%; display:inline-flex;
+  align-items:center; justify-content:center; background:linear-gradient(135deg,#F4A623,#6B4C9A);
+  color:#fff; font-weight:600; font-size:12px; vertical-align:middle; }
+
+.main { padding:24px 32px; }
+
+.breadcrumb { margin-bottom:10px; font-size:13px; }
+.breadcrumb a { color:#6B4C9A; text-decoration:none; font-weight:600; }
+.breadcrumb a:hover { text-decoration:underline; }
+
+.hero { background:#fff; border-radius:12px; padding:22px 26px; margin-bottom:20px;
+  box-shadow:0 1px 3px rgba(0,0,0,0.04);
+  display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+.hero-left h1 { font-size:26px; font-weight:700; }
+.hero-left .cat { font-size:11px; font-weight:600; color:#6B4C9A; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;}
+.hero-left .desc { color:#555; font-size:14px; margin-top:6px; }
+.hero-meta { display:flex; gap:24px; flex-wrap:wrap; }
+.hero-meta .item .label { font-size:11px; font-weight:600; color:#676879; text-transform:uppercase; letter-spacing:0.5px; }
+.hero-meta .item .value { font-size:14px; font-weight:600; color:#1D1D1F; margin-top:2px; }
+
+.status-pill { display:inline-block; padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600; }
+.pill-in-progress { background:#FFF4E6; color:#C9851E; }
+.pill-completed { background:#E4F7ED; color:#00A865; }
+.pill-not-started, .pill-to-be-started { background:#EEF0F3; color:#676879; }
+.pill-blocked { background:#FDE7EA; color:#C53B4C; }
+.pill-needs-attention { background:#FFE8DE; color:#C9562E; }
+
+.tabs { display:flex; gap:6px; border-bottom:2px solid #E6E9EF; margin-bottom:20px; }
+.tab { padding:12px 18px; background:none; border:none; cursor:pointer;
+  font-size:14px; font-weight:600; color:#676879; border-bottom:2px solid transparent; margin-bottom:-2px; }
+.tab.active { color:#F4A623; border-bottom-color:#F4A623; }
+
+.view { display:none; }
+.view.active { display:block; }
+
+/* ---------- TABLE ---------- */
+.panel { background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+.table-ctl { display:flex; gap:10px; margin-bottom:14px; }
+.search { flex:1; padding:8px 12px; border:1px solid #E6E9EF; border-radius:6px; font-size:14px; }
+.btn { padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-weight:600; font-size:13px; }
+.btn-primary { background:linear-gradient(135deg,#F4A623,#6B4C9A); color:#fff; }
+.btn-secondary { background:#E6E9EF; color:#323338; }
+
+table.tasks { width:100%; border-collapse:collapse; font-size:13px; }
+table.tasks thead { background:#F6F7FB; }
+table.tasks th { text-align:left; padding:10px 10px; font-size:11px; color:#676879; text-transform:uppercase; font-weight:600; letter-spacing:0.4px; }
+table.tasks td { padding:10px; border-bottom:1px solid #EEF0F3; vertical-align:top; }
+table.tasks tr { border-left:3px solid transparent; }
+table.tasks tr.s-completed { border-left-color:#00C875; }
+table.tasks tr.s-in-progress { border-left-color:#F4A623; }
+table.tasks tr.s-not-started, table.tasks tr.s-to-be-started { border-left-color:#B0B6C0; }
+table.tasks tr.s-blocked { border-left-color:#E2445C; }
+table.tasks tr.s-needs-attention { border-left-color:#FF7A45; }
+table.tasks tr:hover { background:#FAFBFD; }
+.task-title { font-weight:600; cursor:pointer; }
+.task-title:hover { color:#F4A623; }
+.chips { display:flex; gap:4px; flex-wrap:wrap; }
+.avatar-sm { width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,#F4A623,#6B4C9A);
+  color:#fff; font-size:10px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; }
+
+.priority-high { color:#E2445C; font-weight:600; }
+.priority-medium { color:#C9851E; font-weight:600; }
+.priority-low { color:#00A865; font-weight:600; }
+
+/* ---------- KANBAN ---------- */
+.kanban { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; }
+.k-col { background:#fff; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.04); min-height:300px; }
+.k-col h4 { font-size:13px; margin-bottom:10px; padding-bottom:8px; border-bottom:3px solid; }
+.k-col.s-not-started h4 { border-color:#B0B6C0; }
+.k-col.s-in-progress h4 { border-color:#F4A623; }
+.k-col.s-blocked h4 { border-color:#E2445C; }
+.k-col.s-needs-attention h4 { border-color:#FF7A45; }
+.k-col.s-completed h4 { border-color:#00C875; }
+.k-card { background:#fff; border:1px solid #E6E9EF; border-radius:6px; padding:10px; margin-bottom:10px; cursor:pointer; font-size:12px; }
+.k-card:hover { box-shadow:0 2px 8px rgba(0,0,0,0.08); }
+
+/* ---------- NOTIFICATIONS ---------- */
+.notif { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,0.04); }
+.notif h4 { margin-bottom:12px; font-size:14px; display:flex; align-items:center; gap:8px; }
+.notif-item { padding:10px 12px; border-radius:6px; margin-bottom:8px; border-left:4px solid; cursor:pointer; }
+.notif-item .t { font-weight:600; font-size:13px; }
+.notif-item .s { font-size:12px; margin-top:3px; }
+.notif-overdue { background:#FFF5F5; border-color:#E2445C; }
+.notif-overdue .s { color:#C53B4C; }
+.notif-today { background:#FFF9F0; border-color:#F4A623; }
+.notif-today .s { color:#C9851E; }
+.notif-upcoming { background:#F0F7FF; border-color:#4A90E2; }
+.notif-upcoming .s { color:#2066C9; }
+.notif-done { background:#F0FFF4; border-color:#00C875; opacity:0.8; }
+.notif-done .s { color:#00A865; }
+
+/* ---------- MODAL ---------- */
+.modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:200; align-items:center; justify-content:center; }
+.modal.show { display:flex; }
+.modal-content { background:#fff; border-radius:10px; padding:24px; width:90%; max-width:700px; max-height:90vh; overflow-y:auto; }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.modal-header h3 { font-size:18px; font-weight:700; }
+.modal-close { cursor:pointer; font-size:20px; color:#B0B6C0; }
+.form-group { margin-bottom:12px; }
+.form-label { display:block; font-size:11px; font-weight:600; color:#676879; text-transform:uppercase; margin-bottom:4px; letter-spacing:0.4px; }
+.form-input, textarea, select.form-input { width:100%; padding:8px 12px; border:1px solid #E6E9EF; border-radius:6px; font-size:13px; font-family:'Figtree',sans-serif; }
+textarea { min-height:80px; resize:vertical; }
+.form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.attachment-item, .subtask-item { background:#F6F7FB; padding:8px 10px; border-radius:6px; margin-bottom:6px;
+  display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+.remove-btn { color:#E2445C; cursor:pointer; font-weight:700; padding-left:8px; }
+.modal-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+
+.ai-banner { background:linear-gradient(135deg,#FFF8E1,#FFF0D4); border-left:4px solid #F4A623;
+  padding:12px 16px; margin-bottom:16px; border-radius:6px; display:none; font-size:13px; }
+.ai-banner.show { display:block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex; align-items:center;">
+    <div class="thrive-logo">
+      <div class="thrive-word">thrive<span class="star">*</span></div>
+      <div class="thrive-tag">pr  |  content  |  digital</div>
+    </div>
+    <div class="header-title">Task Management</div>
+  </div>
+  <div class="header-actions">
+    <a href="/board">📊 Board</a>
+    <a href="/">⏰ Timesheet App</a>
+    <span class="avatar" title="{{ user.name }}">{{ user.name[0]|upper }}</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="breadcrumb"><a href="/board">← Back to Board</a></div>
+
+  <div class="hero">
+    <div class="hero-left">
+      <div class="cat">{{ project.category }}</div>
+      <h1>{{ project.name }}</h1>
+      <div class="desc">{{ project.what_we_doing }}</div>
+    </div>
+    <div class="hero-meta">
+      <div class="item">
+        <div class="label">Project Status</div>
+        <div class="value"><span class="status-pill pill-{{ project.status|lower|replace(' ','-') }}">{{ project.status }}</span></div>
+      </div>
+      <div class="item">
+        <div class="label">Digital Champion / Owner</div>
+        <div class="value">{{ project.champions|join(' · ') }}</div>
+      </div>
+      <div class="item">
+        <div class="label">Timeline</div>
+        <div class="value" id="timeline-range">—</div>
+      </div>
+      <div class="item">
+        <div class="label">Progress</div>
+        <div class="value" id="progress-stat">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ai-banner" id="ai-banner"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchView('table', this)">📋 Table</button>
+    <button class="tab" onclick="switchView('kanban', this)">🎯 Kanban</button>
+    <button class="tab" onclick="switchView('notifications', this)">🔔 Notifications</button>
+  </div>
+
+  <!-- TABLE -->
+  <div id="view-table" class="view active">
+    <div class="panel">
+      <div class="table-ctl">
+        <input type="text" class="search" id="search-input" placeholder="Search tasks…" onkeyup="filterTasks()">
+        <button class="btn btn-primary" onclick="openNewTask()">+ New Task</button>
+      </div>
+      <table class="tasks">
+        <thead>
+          <tr>
+            <th style="width:3%"></th>
+            <th style="width:22%">Task</th>
+            <th style="width:12%">Task Status</th>
+            <th style="width:11%">Deadline</th>
+            <th style="width:20%">What we're doing</th>
+            <th style="width:14%">Digital Champion / Owner</th>
+            <th style="width:8%">Priority</th>
+            <th style="width:6%">Budget</th>
+            <th style="width:4%">📎</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- KANBAN -->
+  <div id="view-kanban" class="view">
+    <div class="kanban" id="kanban"></div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div id="view-notifications" class="view">
+    <div class="notif" id="notif-body"></div>
+  </div>
+</div>
+
+<!-- NEW TASK MODAL -->
+<div class="modal" id="modal-new">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Create New Task</h3>
+      <span class="modal-close" onclick="closeModal('modal-new')">✕</span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Task Title</label>
+      <input type="text" class="form-input" id="nt-title">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Task Status</label>
+        <select class="form-input" id="nt-status">
+          <option>Not started</option><option>In progress</option>
+          <option>Blocked</option><option>Needs attention</option><option>Completed</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-input" id="nt-priority">
+          <option>High</option><option selected>Medium</option><option>Low</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Deadline</label>
+        <input type="date" class="form-input" id="nt-due">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Budget (USD)</label>
+        <input type="number" class="form-input" id="nt-budget" placeholder="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What we're doing</label>
+      <textarea class="form-input" id="nt-desc"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Digital Champion / Owner (comma separated)</label>
+      <input type="text" class="form-input" id="nt-owners" placeholder="e.g. Hugh, Michael">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-input" id="nt-notes"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-new')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewTask()">Create Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal" id="modal-detail">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="md-title">Task</h3>
+      <span class="modal-close" onclick="closeModal('modal-detail')">✕</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Task Status</label>
+        <select class="form-input" id="md-status">
+          <option>Not started</option><option>In progress</option>
+          <option>Blocked</option><option>Needs attention</option><option>Completed</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-input" id="md-priority">
+          <option>High</option><option>Medium</option><option>Low</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Deadline</label>
+        <input type="date" class="form-input" id="md-due">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Budget (USD)</label>
+        <input type="number" class="form-input" id="md-budget">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">What we're doing</label>
+      <textarea class="form-input" id="md-desc"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Digital Champion / Owner (comma separated)</label>
+      <input type="text" class="form-input" id="md-owners">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea class="form-input" id="md-notes"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">📎 Attachments</label>
+      <div id="md-attachments"></div>
+      <div style="display:flex; gap:6px; margin-top:4px;">
+        <input type="text" class="form-input" id="md-att-url" placeholder="Paste file name or URL…">
+        <button class="btn btn-secondary" onclick="addAttachment()">Add</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">✓ Subtasks</label>
+      <div id="md-subtasks"></div>
+      <div style="display:flex; gap:6px; margin-top:4px;">
+        <input type="text" class="form-input" id="md-sub" placeholder="Add subtask…">
+        <button class="btn btn-secondary" onclick="addSubtask()">Add</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-detail')">Close</button>
+      <button class="btn btn-primary" onclick="saveTaskEdits()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PROJECT = {{ project|tojson }};
+let TASKS = [];
+let current = null;
+
+function slugify(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+
+async function loadTasks(){
+  const res = await fetch('/api/tasks?project=' + encodeURIComponent(PROJECT.name));
+  TASKS = await res.json();
+  renderAll();
+}
+
+function renderAll(){
+  renderTable();
+  renderKanban();
+  renderNotif();
+  updateHeroStats();
+  checkAIBanner();
+}
+
+function updateHeroStats(){
+  if (!TASKS.length) return;
+  const dates = TASKS.map(t => new Date(t.due_date).getTime()).filter(n=>!isNaN(n));
+  if (dates.length){
+    const min = new Date(Math.min(...dates));
+    const max = new Date(Math.max(...dates));
+    document.getElementById('timeline-range').textContent =
+      min.toLocaleDateString('en-AU',{day:'2-digit',month:'short'}) + ' → ' +
+      max.toLocaleDateString('en-AU',{day:'2-digit',month:'short'});
+  }
+  const done = TASKS.filter(t => t.status === 'Completed').length;
+  document.getElementById('progress-stat').textContent = `${done} / ${TASKS.length} done (${Math.round(done/TASKS.length*100)}%)`;
+}
+
+function checkAIBanner(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const stalled = TASKS.find(t => {
+    if (t.status !== 'Not started' && t.status !== 'Blocked') return false;
+    const due = new Date(t.due_date); due.setHours(0,0,0,0);
+    return (due - today) / 86400000 <= 7;
+  });
+  if (stalled){
+    document.getElementById('ai-banner').innerHTML =
+      `🤖 <b>"${stalled.title}"</b> is ${stalled.status.toLowerCase()} and due ${stalled.due_date}. Want to update status or log time?
+       <span style="float:right;cursor:pointer;color:#676879;" onclick="this.parentNode.classList.remove('show')">✕</span>`;
+    document.getElementById('ai-banner').classList.add('show');
+  }
+}
+
+function switchView(name, btn){
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ---------- TABLE ---------- */
+function renderTable(){
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = TASKS.map(t => {
+    const owners = (t.assignees || []).map(a => {
+      const initials = a.split(' ').map(n => n[0]).join('').toUpperCase();
+      return `<span class="avatar-sm" title="${a}">${initials}</span>`;
+    }).join(' ');
+    const attIcon = (t.attachments && t.attachments.length) ? '📎' : '–';
+    return `
+      <tr class="s-${slugify(t.status)}" data-task-id="${t.id}">
+        <td><input type="checkbox" ${t.status==='Completed'?'checked':''} onchange="toggleDone('${t.id}', this.checked)"></td>
+        <td><span class="task-title" onclick="openDetail('${t.id}')">${t.title}</span></td>
+        <td><span class="status-pill pill-${slugify(t.status)}">${t.status}</span></td>
+        <td>${t.due_date || '—'}</td>
+        <td style="font-size:12px; color:#555;">${t.description || '—'}</td>
+        <td><div class="chips">${owners || '<span style="color:#B0B6C0;">—</span>'}</div></td>
+        <td><span class="priority-${(t.priority||'').toLowerCase()}">${t.priority||'—'}</span></td>
+        <td>$${(t.budget||0).toLocaleString()}</td>
+        <td style="text-align:center;">${attIcon}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterTasks(){
+  const q = document.getElementById('search-input').value.toLowerCase();
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+/* ---------- KANBAN ---------- */
+function renderKanban(){
+  const cols = ['Not started','In progress','Blocked','Needs attention','Completed'];
+  document.getElementById('kanban').innerHTML = cols.map(s => {
+    const items = TASKS.filter(t => t.status === s);
+    return `
+      <div class="k-col s-${slugify(s)}">
+        <h4>${s} (${items.length})</h4>
+        ${items.map(t => `
+          <div class="k-card" onclick="openDetail('${t.id}')">
+            <b>${t.title}</b>
+            <div style="font-size:11px; color:#676879; margin-top:4px;">📅 ${t.due_date} · ${(t.assignees||[]).join(', ')||'—'}</div>
+          </div>`).join('')}
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- NOTIFICATIONS ---------- */
+function renderNotif(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const overdue = TASKS.filter(t => { const d=new Date(t.due_date); d.setHours(0,0,0,0); return d < today && t.status !== 'Completed'; });
+  const dueToday = TASKS.filter(t => { const d=new Date(t.due_date); d.setHours(0,0,0,0); return d.getTime() === today.getTime() && t.status !== 'Completed'; });
+  const upcoming = TASKS.filter(t => { const d=new Date(t.due_date); d.setHours(0,0,0,0); const diff=(d-today)/86400000; return diff>0 && diff<=14 && t.status !== 'Completed'; });
+  const done = TASKS.filter(t => t.status === 'Completed');
+
+  const host = document.getElementById('notif-body');
+  let html = '';
+  const section = (title, items, cls, color) => {
+    if (!items.length) return '';
+    return `<h4 style="color:${color}">${title} (${items.length})</h4>` +
+      items.map(t => `<div class="notif-item ${cls}" onclick="openDetail('${t.id}')">
+        <div class="t">${t.title}</div>
+        <div class="s">${t.status} · ${(t.assignees||[]).join(', ')||'—'} · due ${t.due_date}</div>
+      </div>`).join('') + '<div style="height:14px"></div>';
+  };
+  html += section('⚠️ Overdue', overdue, 'notif-overdue', '#E2445C');
+  html += section('📅 Due Today', dueToday, 'notif-today', '#C9851E');
+  html += section('⏭️ Due Next 2 Weeks', upcoming, 'notif-upcoming', '#4A90E2');
+  html += section('✅ Completed', done, 'notif-done', '#00A865');
+  host.innerHTML = html || '<p style="text-align:center; color:#B0B6C0;">No notifications.</p>';
+}
+
+/* ---------- DETAIL MODAL ---------- */
+function openDetail(id){
+  current = TASKS.find(t => t.id === id);
+  if (!current) return;
+  document.getElementById('md-title').textContent = current.title;
+  document.getElementById('md-status').value = current.status || 'Not started';
+  document.getElementById('md-priority').value = current.priority || 'Medium';
+  document.getElementById('md-due').value = current.due_date || '';
+  document.getElementById('md-budget').value = current.budget || 0;
+  document.getElementById('md-desc').value = current.description || '';
+  document.getElementById('md-owners').value = (current.assignees||[]).join(', ');
+  document.getElementById('md-notes').value = current.notes || '';
+  renderAttachments();
+  renderSubtasks();
+  document.getElementById('modal-detail').classList.add('show');
+}
+
+function renderAttachments(){
+  document.getElementById('md-attachments').innerHTML = (current.attachments||[]).map((a,i) =>
+    `<div class="attachment-item"><span>📎 ${a.name}</span><span class="remove-btn" onclick="rmAtt(${i})">✕</span></div>`
+  ).join('') || '<div style="color:#B0B6C0; font-size:12px;">No attachments.</div>';
+}
+function addAttachment(){
+  const v = document.getElementById('md-att-url').value.trim();
+  if (!v) return;
+  const name = v.split('/').pop();
+  current.attachments = current.attachments || [];
+  current.attachments.push({name, url: v});
+  document.getElementById('md-att-url').value='';
+  renderAttachments();
+}
+function rmAtt(i){ current.attachments.splice(i,1); renderAttachments(); }
+
+function renderSubtasks(){
+  document.getElementById('md-subtasks').innerHTML = (current.subtasks||[]).map((s,i) =>
+    `<div class="subtask-item">
+      <label style="display:flex; align-items:center; gap:8px; flex:1;">
+        <input type="checkbox" ${s.done?'checked':''} onchange="toggleSub(${i}, this.checked)">
+        <span style="${s.done?'text-decoration:line-through; color:#B0B6C0;':''}">${s.title}</span>
+      </label>
+      <span class="remove-btn" onclick="rmSub(${i})">✕</span>
+    </div>`
+  ).join('') || '<div style="color:#B0B6C0; font-size:12px;">No subtasks.</div>';
+}
+function addSubtask(){
+  const v = document.getElementById('md-sub').value.trim();
+  if (!v) return;
+  current.subtasks = current.subtasks || [];
+  current.subtasks.push({title:v, done:false});
+  document.getElementById('md-sub').value='';
+  renderSubtasks();
+}
+function toggleSub(i, d){ current.subtasks[i].done = d; renderSubtasks(); }
+function rmSub(i){ current.subtasks.splice(i,1); renderSubtasks(); }
+
+async function saveTaskEdits(){
+  const payload = {
+    status: document.getElementById('md-status').value,
+    priority: document.getElementById('md-priority').value,
+    due_date: document.getElementById('md-due').value,
+    budget: parseFloat(document.getElementById('md-budget').value) || 0,
+    description: document.getElementById('md-desc').value,
+    assignees: document.getElementById('md-owners').value.split(',').map(s=>s.trim()).filter(Boolean),
+    notes: document.getElementById('md-notes').value,
+    attachments: current.attachments || [],
+    subtasks: current.subtasks || [],
+  };
+  await fetch('/api/tasks/' + current.id, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  });
+  closeModal('modal-detail');
+  await loadTasks();
+}
+
+async function toggleDone(id, checked){
+  await fetch('/api/tasks/' + id, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status: checked ? 'Completed' : 'In progress'}),
+  });
+  loadTasks();
+}
+
+function openNewTask(){
+  document.getElementById('nt-title').value = '';
+  document.getElementById('nt-status').value = 'Not started';
+  document.getElementById('nt-priority').value = 'Medium';
+  document.getElementById('nt-due').value = '';
+  document.getElementById('nt-budget').value = '';
+  document.getElementById('nt-desc').value = '';
+  document.getElementById('nt-owners').value = PROJECT.champions.filter(c => c !== 'TBC').join(', ');
+  document.getElementById('nt-notes').value = '';
+  document.getElementById('modal-new').classList.add('show');
+}
+
+async function saveNewTask(){
+  const title = document.getElementById('nt-title').value.trim();
+  if (!title){ alert('Please enter a task title'); return; }
+  const payload = {
+    title,
+    project: PROJECT.name,
+    status: document.getElementById('nt-status').value,
+    priority: document.getElementById('nt-priority').value,
+    due_date: document.getElementById('nt-due').value || new Date().toISOString().split('T')[0],
+    budget: parseFloat(document.getElementById('nt-budget').value) || 0,
+    description: document.getElementById('nt-desc').value,
+    assignees: document.getElementById('nt-owners').value.split(',').map(s=>s.trim()).filter(Boolean),
+    notes: document.getElementById('nt-notes').value,
+    attachments: [], subtasks: [],
+  };
+  await fetch('/api/tasks', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  });
+  closeModal('modal-new');
+  loadTasks();
+}
+
+function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+window.addEventListener('DOMContentLoaded', loadTasks);
+</script>
+</body>
+</html>

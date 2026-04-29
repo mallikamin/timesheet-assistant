@@ -158,9 +158,18 @@ def search_events(
     access_token: str,
     date_from: str = None,
     date_to: str = None,
+    include_declined: bool = False,
+    drop_future: bool = True,
 ) -> List[Dict]:
     """Fetch calendar events for a date range (default: today only).
-    Returns list of dicts with: summary, date, start, end, duration_hours, attendees, location.
+    Returns list of dicts with: id, summary, date, start, end, duration_hours,
+    attendees (display names), attendee_emails, location, is_recurring,
+    recurring_event_id, response_status, was_declined.
+
+    Filters:
+      - all-day events (no dateTime) are skipped
+      - declined events are skipped unless include_declined=True
+      - future events (after now) are skipped if drop_future=True
     """
     if date_from:
         start = datetime.strptime(date_from, "%Y-%m-%d")
@@ -174,6 +183,11 @@ def search_events(
     else:
         end = start + timedelta(days=1)
 
+    if drop_future:
+        now = datetime.now()
+        if end > now:
+            end = now
+
     time_min = start.isoformat() + "Z"
     time_max = end.isoformat() + "Z"
 
@@ -186,7 +200,7 @@ def search_events(
                 "timeMax": time_max,
                 "singleEvents": "true",
                 "orderBy": "startTime",
-                "maxResults": 100,
+                "maxResults": 250,
             },
             timeout=15,
         )
@@ -207,26 +221,47 @@ def search_events(
         if "dateTime" not in start_raw:
             continue
 
+        attendees_raw = ev.get("attendees", [])
+        # Find self response status — declined events should usually be skipped
+        self_status = None
+        for a in attendees_raw:
+            if a.get("self"):
+                self_status = a.get("responseStatus")
+                break
+        was_declined = self_status == "declined"
+        if was_declined and not include_declined:
+            continue
+
         start_dt = datetime.fromisoformat(start_raw["dateTime"])
         end_dt = datetime.fromisoformat(end_raw["dateTime"])
         duration = (end_dt - start_dt).total_seconds() / 3600
         duration = max(round(duration * 12) / 12, 0.08)
 
-        attendees = ev.get("attendees", [])
         attendee_names = [
             a.get("displayName", a.get("email", ""))
-            for a in attendees
+            for a in attendees_raw
             if not a.get("self", False)
+        ]
+        attendee_emails = [
+            a.get("email", "")
+            for a in attendees_raw
+            if not a.get("self", False) and a.get("email")
         ]
 
         events.append({
+            "id": ev.get("id", ""),
             "summary": ev.get("summary", "No title"),
             "date": start_dt.strftime("%Y-%m-%d"),
             "start": start_dt.strftime("%H:%M"),
             "end": end_dt.strftime("%H:%M"),
             "duration_hours": round(duration, 2),
             "attendees": attendee_names,
+            "attendee_emails": attendee_emails,
             "location": ev.get("location", ""),
+            "is_recurring": bool(ev.get("recurringEventId")),
+            "recurring_event_id": ev.get("recurringEventId", ""),
+            "response_status": self_status or "unknown",
+            "was_declined": was_declined,
         })
 
     return events

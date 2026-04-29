@@ -16,7 +16,7 @@ _project_cache = None
 _cache_time = 0
 _user_cache = None
 _user_cache_time = 0
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 3600  # 1 hour — projects/users rarely change
 
 
 def _headers(access_token: str = None) -> Dict[str, str]:
@@ -42,6 +42,48 @@ def _headers(access_token: str = None) -> Dict[str, str]:
 def is_configured() -> bool:
     """Check if Harvest credentials are set."""
     return bool(os.getenv("HARVEST_ACCESS_TOKEN")) and bool(os.getenv("HARVEST_ACCOUNT_ID"))
+
+
+def get_my_user(access_token: str) -> Optional[Dict]:
+    """Fetch the current OAuth-authenticated user's Harvest profile.
+    Returns dict with id, email, first_name, last_name — or None on failure."""
+    if not access_token:
+        return None
+    try:
+        resp = httpx.get(
+            f"{HARVEST_BASE}/users/me",
+            headers=_headers(access_token),
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        print(f"Harvest get_my_user error: {resp.status_code}")
+        return None
+    except Exception as e:
+        print(f"Harvest get_my_user error: {e}")
+        return None
+
+
+def get_my_project_assignments(access_token: str) -> List[Dict]:
+    """Fetch the current OAuth user's active project assignments.
+    Returns list of project_assignment dicts (each has 'project' and
+    'task_assignments' subkeys)."""
+    if not access_token:
+        return []
+    try:
+        resp = httpx.get(
+            f"{HARVEST_BASE}/users/me/project_assignments",
+            headers=_headers(access_token),
+            params={"is_active": "true"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("project_assignments", [])
+        print(f"Harvest get_my_project_assignments error: {resp.status_code}")
+        return []
+    except Exception as e:
+        print(f"Harvest get_my_project_assignments error: {e}")
+        return []
 
 
 def get_users(access_token: str = None) -> List[Dict]:
