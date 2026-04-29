@@ -762,6 +762,13 @@ What have you been up to?</div>
     let conversationHistory = [];
     let isProcessing = false;
 
+    // Cached entries used by optimistic UI handlers (edit/cancel/delete)
+    // so they can update the DOM in place without a full server round trip.
+    let cachedEntries = [];
+    // Map<entryId, originalActionsInnerHtml> — populated when edit mode opens,
+    // consumed by cancelEdit to restore the action buttons without refetching.
+    const editStash = new Map();
+
     // --- Chat Functions ---
 
     function addMessage(role, text) {
@@ -971,74 +978,113 @@ What have you been up to?</div>
             const res = await fetch(`/api/entries/${user}`);
             const data = await res.json();
 
-            if (data.entries.length === 0) {
+            // Newest first \u2014 also seeds the local cache used by optimistic handlers.
+            cachedEntries = data.entries.slice().reverse();
+            editStash.clear();
+
+            if (cachedEntries.length === 0) {
                 entriesList.innerHTML = '<div class="empty-entries">Your time entries will appear here as you tell me what you worked on.</div>';
                 entriesSummary.textContent = 'No entries yet';
                 document.getElementById('approveAllBtn').style.display = 'none';
                 return;
             }
 
-            const totalHours = data.summary.total_hours;
-            const count = data.summary.entry_count;
-            entriesSummary.textContent = `${count} ${count === 1 ? 'entry' : 'entries'} \u2022 ${totalHours.toFixed(2)} hours total`;
-
-            // Show Approve All if any drafts exist
-            const hasDrafts = data.entries.some(e => e.status === 'Draft' || e.status === 'Needs Review');
-            document.getElementById('approveAllBtn').style.display = hasDrafts ? 'block' : 'none';
-
+            updateEntriesSummary();
             entriesList.innerHTML = '';
-            // Show newest first
-            for (const entry of data.entries.reverse()) {
-                const card = document.createElement('div');
-                const isApproved = entry.status === 'Approved';
-                card.className = `entry-card${isApproved ? ' approved' : ''}`;
-
-                let statusClass = 'draft';
-                if (entry.status === 'Needs Review') statusClass = 'needs-review';
-                if (entry.status === 'Approved') statusClass = 'approved';
-
-                const dateObj = new Date(entry.date + 'T00:00:00');
-                const dateStr = dateObj.toLocaleDateString('en-AU', {
-                    weekday: 'short', day: 'numeric', month: 'short'
-                });
-
-                let actionsHtml = '';
-                if (!isApproved) {
-                    actionsHtml = `
-                        <div class="entry-actions">
-                            <button class="btn-approve" id="approve-${entry.id}" onclick="approveEntry('${entry.id}')">Approve &rarr; Harvest</button>
-                            <button class="btn-edit-entry" onclick="editEntry('${entry.id}', this)">Edit</button>
-                        </div>
-                    `;
-                }
-
-                card.innerHTML = `
-                    <button class="entry-delete" onclick="deleteEntry('${entry.id}')" title="Delete entry">&times;</button>
-                    <div class="entry-client">${entry.client}</div>
-                    <div class="entry-project">[${entry.project_code}] ${entry.project_name}</div>
-                    <div class="entry-meta">
-                        <span class="entry-hours">${entry.hours}h \u2022 ${entry.task}</span>
-                        <span class="entry-status ${statusClass}">${entry.status}</span>
-                        ${entry.harvest_id ? '<span class="entry-status harvest-synced">Harvest</span>' : ''}
-                    </div>
-                    <div class="entry-notes">${entry.notes || ''}</div>
-                    <div class="entry-date">${dateStr}</div>
-                    ${actionsHtml}
-                `;
-                entriesList.appendChild(card);
+            for (const entry of cachedEntries) {
+                entriesList.appendChild(buildEntryCard(entry));
             }
         } catch (err) {
             console.error('Failed to load entries:', err);
         }
     }
 
+    function buildEntryCard(entry) {
+        const isApproved = entry.status === 'Approved';
+        let statusClass = 'draft';
+        if (entry.status === 'Needs Review') statusClass = 'needs-review';
+        if (entry.status === 'Approved') statusClass = 'approved';
+
+        const dateObj = new Date(entry.date + 'T00:00:00');
+        const dateStr = dateObj.toLocaleDateString('en-AU', {
+            weekday: 'short', day: 'numeric', month: 'short'
+        });
+
+        let actionsHtml = '';
+        if (!isApproved) {
+            actionsHtml = `
+                <div class="entry-actions">
+                    <button class="btn-approve" id="approve-${entry.id}" onclick="approveEntry('${entry.id}')">Approve &rarr; Harvest</button>
+                    <button class="btn-edit-entry" onclick="editEntry('${entry.id}', this)">Edit</button>
+                </div>
+            `;
+        }
+
+        const card = document.createElement('div');
+        card.className = `entry-card${isApproved ? ' approved' : ''}`;
+        card.dataset.entryId = entry.id;
+        card.innerHTML = `
+            <button class="entry-delete" onclick="deleteEntry('${entry.id}')" title="Delete entry">&times;</button>
+            <div class="entry-client">${entry.client}</div>
+            <div class="entry-project">[${entry.project_code}] ${entry.project_name}</div>
+            <div class="entry-meta">
+                <span class="entry-hours">${entry.hours}h \u2022 ${entry.task}</span>
+                <span class="entry-status ${statusClass}">${entry.status}</span>
+                ${entry.harvest_id ? '<span class="entry-status harvest-synced">Harvest</span>' : ''}
+            </div>
+            <div class="entry-notes">${entry.notes || ''}</div>
+            <div class="entry-date">${dateStr}</div>
+            ${actionsHtml}
+        `;
+        return card;
+    }
+
+    function updateEntriesSummary() {
+        const count = cachedEntries.length;
+        if (count === 0) {
+            entriesSummary.textContent = 'No entries yet';
+            document.getElementById('approveAllBtn').style.display = 'none';
+            return;
+        }
+        const totalHours = cachedEntries.reduce((sum, e) => sum + Number(e.hours || 0), 0);
+        entriesSummary.textContent = `${count} ${count === 1 ? 'entry' : 'entries'} \u2022 ${totalHours.toFixed(2)} hours total`;
+        const hasDrafts = cachedEntries.some(e => e.status === 'Draft' || e.status === 'Needs Review');
+        document.getElementById('approveAllBtn').style.display = hasDrafts ? 'block' : 'none';
+    }
+
     async function deleteEntry(entryId) {
+        const card = entriesList.querySelector(`[data-entry-id="${entryId}"]`);
+        if (!card) return;
+
+        // Optimistic: visually mark the card as pending and ignore further clicks
+        // on it. We don't fully remove yet \u2014 if the backend rejects the delete,
+        // we want to be able to restore the visual state without rebuilding.
+        card.style.transition = 'opacity 150ms ease';
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+
         try {
-            await fetch(`/api/entries/${entryId}`, { method: 'DELETE' });
-            addSystemMessage('Entry removed.');
-            refreshEntries();
+            const res = await fetch(`/api/entries/${entryId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                card.remove();
+                cachedEntries = cachedEntries.filter(e => e.id !== entryId);
+                editStash.delete(entryId);
+                if (cachedEntries.length === 0) {
+                    entriesList.innerHTML = '<div class="empty-entries">Your time entries will appear here as you tell me what you worked on.</div>';
+                }
+                updateEntriesSummary();
+                addSystemMessage('Entry removed.');
+            } else {
+                card.style.opacity = '';
+                card.style.pointerEvents = '';
+                addSystemMessage('Delete failed \u2014 entry kept.');
+            }
         } catch (err) {
             console.error('Failed to delete entry:', err);
+            card.style.opacity = '';
+            card.style.pointerEvents = '';
+            addSystemMessage('Delete failed \u2014 entry kept.');
         }
     }
 
@@ -1282,6 +1328,10 @@ What have you been up to?</div>
         const hoursText = card.querySelector('.entry-hours').textContent;
         const currentHours = parseFloat(hoursText);
 
+        // Stash the original action-button markup so cancelEdit can restore
+        // it instantly — no GET round-trip just to redraw the buttons.
+        editStash.set(entryId, actionsEl.innerHTML);
+
         actionsEl.innerHTML = `
             <div style="width:100%">
                 <label style="font-size:11px;color:#666;">Hours:</label>
@@ -1292,15 +1342,48 @@ What have you been up to?</div>
                        value="${currentNotes}">
                 <div class="entry-edit-actions">
                     <button class="btn-save-edit" onclick="saveEdit('${entryId}')">Save</button>
-                    <button class="btn-cancel-edit" onclick="refreshEntries()">Cancel</button>
+                    <button class="btn-cancel-edit" onclick="cancelEdit('${entryId}')">Cancel</button>
                 </div>
             </div>
         `;
     }
 
+    function cancelEdit(entryId) {
+        const actionsEl = entriesList.querySelector(`[data-entry-id="${entryId}"] .entry-actions`);
+        const original = editStash.get(entryId);
+        if (actionsEl && original !== undefined) {
+            actionsEl.innerHTML = original;
+            editStash.delete(entryId);
+        } else {
+            // Stash lost (page reload mid-edit, etc.) — fall back to a fresh load
+            refreshEntries();
+        }
+    }
+
     async function saveEdit(entryId) {
         const hours = parseFloat(document.getElementById(`editHours-${entryId}`).value);
         const notes = document.getElementById(`editNotes-${entryId}`).value;
+        const card = entriesList.querySelector(`[data-entry-id="${entryId}"]`);
+        const entry = cachedEntries.find(e => e.id === entryId);
+        if (!card || !entry) {
+            // Defensive: if cache is out of sync, fall back to fetching ground truth
+            await refreshEntries();
+            return;
+        }
+
+        // Optimistic update — paint the new values, restore the action buttons,
+        // and persist in the background. The user feels instant feedback.
+        const previousHours = entry.hours;
+        const previousNotes = entry.notes;
+        entry.hours = hours;
+        entry.notes = notes;
+
+        const hoursEl = card.querySelector('.entry-hours');
+        const notesEl = card.querySelector('.entry-notes');
+        if (hoursEl) hoursEl.textContent = `${hours}h • ${entry.task}`;
+        if (notesEl) notesEl.textContent = notes || '';
+        cancelEdit(entryId);  // restores the action buttons from stash
+        updateEntriesSummary();
 
         try {
             const res = await fetch(`/api/entries/${entryId}`, {
@@ -1309,12 +1392,23 @@ What have you been up to?</div>
                 body: JSON.stringify({ hours, notes }),
             });
             const data = await res.json();
-            if (data.success) {
-                addSystemMessage('Entry updated.');
-                refreshEntries();
+            if (!data.success) {
+                // Revert
+                entry.hours = previousHours;
+                entry.notes = previousNotes;
+                if (hoursEl) hoursEl.textContent = `${previousHours}h • ${entry.task}`;
+                if (notesEl) notesEl.textContent = previousNotes || '';
+                updateEntriesSummary();
+                addSystemMessage('Save failed — change reverted.');
             }
         } catch (err) {
             console.error('Failed to update entry:', err);
+            entry.hours = previousHours;
+            entry.notes = previousNotes;
+            if (hoursEl) hoursEl.textContent = `${previousHours}h • ${entry.task}`;
+            if (notesEl) notesEl.textContent = previousNotes || '';
+            updateEntriesSummary();
+            addSystemMessage('Save failed — change reverted.');
         }
     }
 
