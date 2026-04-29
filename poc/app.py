@@ -177,8 +177,14 @@ _anthropic_kwargs = {
     "timeout": 30.0,
     "max_retries": 0,
 }
-_anthropic_base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip()
+_anthropic_base_url = os.getenv("ANTHROPIC_BASE_URL", "").strip().rstrip("/")
 if _anthropic_base_url:
+    # Defensive: the env var is sometimes pasted without a scheme (e.g.
+    # "anthropic-proxy.foo.workers.dev"). httpx then fails with a cryptic
+    # APIConnectionError instead of a clear URL parse error. Auto-prepend
+    # https:// if missing.
+    if not _anthropic_base_url.startswith(("http://", "https://")):
+        _anthropic_base_url = f"https://{_anthropic_base_url}"
     _anthropic_kwargs["base_url"] = _anthropic_base_url
     _proxy_secret = os.getenv("ANTHROPIC_PROXY_SECRET", "").strip()
     if _proxy_secret:
