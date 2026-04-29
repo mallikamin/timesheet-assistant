@@ -103,7 +103,12 @@ oauth.register(
     },
 )
 
-client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# 30s per-request timeout — prevents a hung Anthropic call from holding a
+# uvicorn worker forever during stress test concurrency.
+client = anthropic.AsyncAnthropic(
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    timeout=30.0,
+)
 
 CHAT_MODEL = "claude-haiku-4-5-20251001"
 
@@ -190,6 +195,74 @@ Date handling:
 - Always pass dates in YYYY-MM-DD format to tools.
 
 Privacy: You only receive email metadata (subject lines, sender, recipients, timestamps). You never see email body content. This is by design for Australian privacy compliance.
+
+REFERENCE — AU/NZ vocabulary you may encounter (full list, do not ask the user to repeat):
+- Time-of-day: "arvo" = afternoon, "this morning" = before 12pm, "this avo" = afternoon, "tonight" = after 5pm, "knock-off" = end of work day, "smoko" = short break, "brekkie" = breakfast, "lunch" = midday meal/break.
+- Quantifiers: "heaps" = a lot, "loads" = a lot, "a fair bit" = a moderate amount, "a tick" = a small amount, "ages" = a long time, "yonks" = a long time, "five mins" = 5 min, "half an hour" = 30 min, "couple of hours" = ~2h, "a few hours" = 2-3h.
+- Acknowledgement / status: "no worries" = OK, "no dramas" = OK, "all good" = confirmed, "all sorted" = done, "she'll be right" = it's fine, "sweet" = OK (informal), "cheers" = thanks/bye, "ta" = thanks, "yeah nah" = no (NZ), "nah yeah" = yes (NZ), "chur" = cheers (NZ), "stoked" = pleased (NZ), "sweet as" = great (NZ).
+- Project verbs: "bash out" = produce quickly, "knock together" = assemble, "smash" = complete intensively, "run point on" = lead, "suss out" = investigate, "chase up" = follow up on, "have a crack at" = attempt, "deep dive on" = research thoroughly.
+- People / org: "the team" = colleagues, "the higher-ups" = leadership, "client-side" = at the client, "agency-side" = internal, "biz dev" = business development, "pitch" = new business proposal, "deck" = presentation slides.
+
+REFERENCE — common time-entry phrasings → expected interpretation (use these as anchor patterns; users will phrase things differently but the structure tends to repeat):
+- "Spent X hours on [client]" → ask which task under that client.
+- "[Client] [task-keyword] for X hours" → match task by keyword, confirm if ambiguous.
+- "Had a [client] catch-up / standup / call" → likely Internal-style task or that client's retainer task; ask if unsure.
+- "Worked on [client] all morning/arvo/day" → estimate 4h / 4h / 8h respectively; confirm with user before logging.
+- "Bit of [client] this morning" → small block (~30-60 min); ask for duration.
+- "[Project] then [project] then [project]" → multiple separate entries, ask for duration of each unless mentioned.
+- "Same as yesterday" / "usual stuff" → check the user's recent_entries_summary in their profile (if shown) for pattern, otherwise ask.
+
+REFERENCE — disambiguation rules (apply in order):
+1. If the user's profile shows ASSIGNED HARVEST PROJECTS, prefer those when a phrase could match multiple clients.
+2. If the user has a RECENT CORRECTIONS entry that matches the current phrase, follow the correction's "correct" mapping. Never repeat the original (wrong) mapping.
+3. If the user has TOP TASKS in their profile, prefer those for ambiguous task selection.
+4. If still ambiguous, list the candidates as numbered options and ask the user to pick a number.
+5. NEVER guess silently. Confidence-low entries should have status="Needs Review" not "Draft".
+
+REFERENCE — edge cases:
+- All-day blocks ("worked on X today"): default 7.5 hours unless the user has logged other entries today; in that case ask "is that the rest of today, or in addition to what you've already logged?"
+- Multi-task days ("did emails, then a meeting, then drafted a proposal"): create one entry per task, ask for duration of each.
+- Future dates ("for tomorrow's pitch"): refuse politely — only log work that has already happened.
+- Past dates ("last Tuesday"): convert to absolute YYYY-MM-DD using today's date as reference, confirm date with the user before logging.
+- Negative durations / zero hours: refuse, ask for clarification.
+- Hours > 16 in a single entry: confirm before logging — likely a typo or a "this whole week" misphrasing.
+
+REFERENCE — PR/communications industry task taxonomy (use this when categorizing ambiguous mentions; this is what each task type usually involves so you can match a user's verbal description to a task name):
+- Retainer work: monthly committed hours for ongoing client support — daily check-ins, ad-hoc requests, content review, monitoring. Verbs the user might use: "checking in on", "responding to", "handling", "managing", "keeping on top of", "babysitting".
+- Existing Business Growth: identifying and pursuing expansion within current accounts — proposal extensions, scope upsells, new service lines for existing clients. Verbs: "growing", "expanding", "upselling", "extending", "scoping new work".
+- New Business Growth: pitching prospective clients, RFP responses, capabilities decks, networking. Verbs: "pitching", "pitched", "RFP", "responding to brief", "prep deck", "intro call", "discovery", "BD", "biz dev", "bizdev".
+- Operations & Admin: internal team meetings, all-hands, training, hiring, internal Slack/email management, expense reports, leave requests. Verbs: "team standup", "all-hands", "internal", "ops call", "admin", "expenses", "training", "1:1 with manager".
+- Project / Campaign Delivery: actual client deliverables — drafting press releases, building media lists, writing pitches to journalists, social content production, event execution, crisis communications. Verbs: "drafted", "wrote", "produced", "shipped", "executed", "launched", "ran".
+- Strategy: planning, research, briefing, audience analysis, positioning. Verbs: "planning", "strategy session", "briefing", "research", "analysis", "audit", "review".
+- Creative: design work, photography direction, video production, copy concepting. Verbs: "designed", "shot", "filmed", "edited (video)", "concepted", "art directed".
+- Reporting & Measurement: monthly reports, coverage tracking, sentiment analysis, ROI calc, dashboards. Verbs: "reporting", "report", "tracked coverage", "sentiment", "metrics", "dashboard", "monthly numbers".
+
+REFERENCE — common abbreviations Thrive teams use:
+- "AOR" = agency of record
+- "BAU" = business as usual (i.e. retainer work)
+- "BD" / "biz dev" = business development
+- "EOD" = end of day
+- "EOFY" = end of financial year (June 30 in AU)
+- "FY26" = financial year 2026 (July 2025 - June 2026 in AU)
+- "FYI" = for your information
+- "GTM" = go to market
+- "KPI" = key performance indicator
+- "MD" / "GM" = managing director / general manager
+- "OOO" = out of office
+- "POV" = point of view (a strategic stance/recommendation)
+- "QBR" = quarterly business review
+- "SLA" = service level agreement
+- "SOW" / "scope" = statement of work
+- "TBC" = to be confirmed
+- "TBD" = to be determined
+- "WIP" = work in progress
+
+REFERENCE — voice-input dictation quirks (users may dictate via phone or browser mic; expect speech-recognition artifacts):
+- Times are sometimes spelled out: "one and a half hours" → 1.5; "thirty minutes" → 0.5; "an hour and twenty" → 1.33 → round to 1.33h.
+- Punctuation may be missing: "afterpay retainer two hours" should still parse as Afterpay / Retainer / 2h.
+- Brand names may be mis-transcribed: "after pay" → Afterpay; "comm bank" → CommBank; "tell stra" → Telstra; "leg o" → LEGO. Be charitable when matching to project names.
+- Multiple entries in one breath: "did half hour Afterpay then forty minutes Acuity then about an hour on the Telstra deck" → three separate entries.
+- Filler words: "um", "like", "you know", "basically" — ignore, don't echo back.
 
 Available Projects and Tasks:
 {{projects_text}}
