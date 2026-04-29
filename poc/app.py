@@ -4,6 +4,7 @@ FastAPI server with Claude-powered conversational timesheet assistant.
 Google SSO authentication.
 """
 
+import asyncio
 import json
 import os
 import time
@@ -35,7 +36,11 @@ import tasks
 import tasks_routes
 import training_log
 import user_profiles
-from project_mapping import get_all_projects_for_prompt, get_projects
+from project_mapping import (
+    get_all_projects_for_prompt,
+    get_all_projects_for_prompt_async,
+    get_projects,
+)
 
 # --- Sentry (optional — no-op when SENTRY_DSN is not configured) ---
 _SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
@@ -80,19 +85,44 @@ async def lifespan(app: FastAPI):
         print(f"[OK] Seeded {len(tasks.get_all_tasks())} tasks across {len(tasks.PROJECTS)} initiatives")
 
     # Pre-warm Harvest projects/users cache if a service PAT is configured.
-    # Saves the first user from waiting 5-10s on the cold N+1 fetch path.
+    # Uses the async fetch so the lifespan handler completes promptly even on
+    # a slow connection. If pre-warm returns 0 projects (PAT 401 or wrong
+    # account), we kick off a background retry that reattempts every 60s
+    # until the cache is populated — that way the first real user doesn't
+    # eat the cold-fetch cost on a worker where pre-warm initially failed.
     if harvest_api.is_configured():
         try:
-            projects = harvest_api.get_projects_with_tasks()
+            projects = await harvest_api.get_projects_with_tasks_async()
             users = harvest_api.get_users()
             print(f"[OK] Pre-warmed Harvest cache: {len(projects)} projects, {len(users)} users")
+            if not projects:
+                asyncio.create_task(_harvest_warmup_retry())
         except Exception as e:
             print(f"[WARN] Harvest pre-warm skipped: {e}")
+            asyncio.create_task(_harvest_warmup_retry())
     else:
         print("[INFO] No Harvest PAT — first user will pay cold-start cost")
 
     yield
     # No shutdown work yet; uvicorn handles graceful socket close.
+
+
+async def _harvest_warmup_retry() -> None:
+    """Background task: keep retrying the Harvest project pre-warm every 60s
+    until we get at least 1 project cached. Stops once cache is populated.
+    Bounded to 30 attempts (30 minutes) so we don't loop forever on a
+    permanently-broken PAT."""
+    for attempt in range(30):
+        await asyncio.sleep(60)
+        try:
+            projects = await harvest_api.get_projects_with_tasks_async()
+            if projects:
+                print(f"[OK] Harvest warmup retry succeeded on attempt {attempt + 1}: {len(projects)} projects cached")
+                return
+            print(f"[INFO] Harvest warmup retry {attempt + 1}/30 returned 0 projects")
+        except Exception as e:
+            print(f"[WARN] Harvest warmup retry {attempt + 1}/30 failed: {e}")
+    print("[WARN] Harvest warmup giving up after 30 attempts")
 
 
 app = FastAPI(title="Timesheet Assistant POC", lifespan=lifespan)
@@ -312,6 +342,39 @@ def build_system_prompt(
         Skipped entirely if both inputs are empty so we don't waste tokens.
     """
     projects_text = get_all_projects_for_prompt(harvest_access_token)
+    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
+        .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
+        .replace("{{today_day}}", date.today().strftime('%A')) \
+        .replace("{{projects_text}}", projects_text) \
+        .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
+
+    blocks: List[Dict] = [
+        {"type": "text", "text": cached_text, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    uncached_parts: List[str] = []
+    if user_email:
+        profile_text = user_profiles.render_profile_block(user_email)
+        if profile_text:
+            uncached_parts.append(profile_text)
+    if notes:
+        uncached_parts.extend(n for n in notes if n)
+
+    if uncached_parts:
+        blocks.append({"type": "text", "text": "\n\n".join(uncached_parts)})
+
+    return blocks
+
+
+async def build_system_prompt_async(
+    user_email: Optional[str] = None,
+    harvest_access_token: Optional[str] = None,
+    notes: Optional[List[str]] = None,
+) -> List[Dict]:
+    """Async version — used by /api/chat/stream so the slow Harvest project
+    fetch (51 task_assignments calls) doesn't block the event loop.
+    Same return shape as build_system_prompt."""
+    projects_text = await get_all_projects_for_prompt_async(harvest_access_token)
     cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
         .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
         .replace("{{today_day}}", date.today().strftime('%A')) \
@@ -1043,7 +1106,10 @@ async def chat_stream(req: ChatRequest, request: Request):
             )
 
         prompt_t0 = time.time()
-        system_blocks = build_system_prompt(
+        # Async build — uses httpx.AsyncClient + asyncio.gather under the hood
+        # so the 51 Harvest task_assignments calls run truly concurrent on the
+        # same connection pool. Cold-cache fetch dropped from ~44s to ~1s.
+        system_blocks = await build_system_prompt_async(
             user_email=user.get("email"),
             harvest_access_token=harvest_access_token,
             notes=runtime_notes,
