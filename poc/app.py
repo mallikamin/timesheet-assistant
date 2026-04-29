@@ -125,6 +125,23 @@ async def _harvest_warmup_retry() -> None:
     print("[WARN] Harvest warmup giving up after 30 attempts")
 
 
+async def _prewarm_harvest_cache(access_token: str) -> None:
+    """Background task fired after a user completes Harvest OAuth. Populates
+    the global project cache with their token so the first chat message
+    doesn't pay the cold-fetch cost. All Thrive users share the same
+    project list (account-wide), so this benefits everyone."""
+    try:
+        t0 = time.time()
+        projects = await harvest_api.get_projects_with_tasks_async(access_token)
+        elapsed_ms = int((time.time() - t0) * 1000)
+        print(
+            f"[OK] Harvest cache pre-warmed via OAuth: "
+            f"{len(projects)} projects in {elapsed_ms}ms"
+        )
+    except Exception as e:
+        print(f"[WARN] Harvest OAuth pre-warm failed: {e}")
+
+
 app = FastAPI(title="Timesheet Assistant POC", lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
@@ -807,6 +824,19 @@ async def auth_harvest_callback(request: Request):
                 )
             except Exception as bootstrap_err:
                 print(f"[WARN] Profile bootstrap failed: {bootstrap_err}")
+
+        # Pre-warm the global Harvest project cache with this user's OAuth
+        # token in the background. The boot-time pre-warm uses HARVEST_PAT,
+        # which 401s on Thrive (account 310089 enforces Google SSO) — so the
+        # cache is empty until someone makes the first chat call. That first
+        # call eats ~5-7s for the N+1 task-assignments fetch.
+        #
+        # By kicking this off as a background task right after OAuth, the
+        # redirect to "/" returns immediately (no UX slowdown), and by the
+        # time the user navigates to chat and types their first message,
+        # the cache is populated. First-impression latency drops 10s -> ~2-3s.
+        if access_token:
+            asyncio.create_task(_prewarm_harvest_cache(access_token))
 
         return RedirectResponse(url="/")
     except Exception as e:
