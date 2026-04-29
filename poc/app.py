@@ -29,12 +29,32 @@ import gmail_sync
 import harvest_api
 import harvest_mock
 import harvest_oauth
+import rate_limit
 import sheets_sync
 import tasks
 import tasks_routes
 import training_log
 import user_profiles
 from project_mapping import get_all_projects_for_prompt, get_projects
+
+# --- Sentry (optional — no-op when SENTRY_DSN is not configured) ---
+_SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            integrations=[FastApiIntegration()],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE", "0.1")),
+            environment=os.getenv("SENTRY_ENV", "production"),
+            send_default_pii=False,  # never send request bodies / cookies
+        )
+        print(f"[OK] Sentry initialized (env={os.getenv('SENTRY_ENV', 'production')})")
+    except Exception as e:
+        print(f"[WARN] Sentry init failed: {e}")
+else:
+    sentry_sdk = None  # type: ignore[assignment]
 
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -704,6 +724,18 @@ async def chat(req: ChatRequest, request: Request):
     user = get_current_user(request)
     if not user:
         return ChatResponse(response="Please log in first.", entries_created=[])
+
+    # Per-user rate limit — protects the Anthropic spend from runaway loops
+    # or abusive clients. 30/min sustained, 30 burst.
+    allowed, retry_after = rate_limit.check_and_consume(user.get("email", ""))
+    if not allowed:
+        return ChatResponse(
+            response=(
+                f"You're sending messages faster than I can keep up. "
+                f"Try again in {int(retry_after) + 1}s."
+            ),
+            entries_created=[],
+        )
 
     # Build messages for Claude
     messages = []
@@ -1454,6 +1486,16 @@ async def calendar_weekly_summary(request: Request, weeks: int = 1):
     user = get_current_user(request)
     if not user:
         return {"error": "not_authenticated", "days": []}
+
+    # This endpoint runs one Claude call but typically processes 10-30 events
+    # in one go, so charge it 3 tokens against the bucket (heavier than a chat).
+    allowed, retry_after = rate_limit.check_and_consume(user.get("email", ""), cost=3.0)
+    if not allowed:
+        return {
+            "error": "rate_limited",
+            "retry_after_seconds": int(retry_after) + 1,
+            "days": [],
+        }
 
     weeks = max(1, min(weeks, 4))  # cap at 4 weeks to keep one Claude call sane
 
