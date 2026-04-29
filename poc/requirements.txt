@@ -9,3 +9,4 @@ gspread~=6.2.0
 google-auth~=2.40.0
 authlib~=1.6.0
 itsdangerous~=2.2.0
+sentry-sdk[fastapi]~=2.18.0
