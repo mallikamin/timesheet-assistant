@@ -160,9 +160,16 @@ oauth.register(
 
 # 30s per-request timeout — prevents a hung Anthropic call from holding a
 # uvicorn worker forever during stress test concurrency.
+# max_retries=0 — disable the SDK's default retry-twice behavior, which
+# stacks to 90+ seconds on a Cloudflare-blocked request and blows past
+# Render's 60s edge proxy timeout (returning 502 HTML to the browser).
+# We'd rather fail fast in <30s and let our graceful classifier surface a
+# clean error to the user. Render side has to fix the IP-reputation issue
+# anyway; retrying just delays the inevitable error message.
 client = anthropic.AsyncAnthropic(
     api_key=os.getenv("ANTHROPIC_API_KEY"),
     timeout=30.0,
+    max_retries=0,
 )
 
 CHAT_MODEL = "claude-haiku-4-5-20251001"
