@@ -67,6 +67,63 @@ def is_configured() -> bool:
     return bool(os.getenv("GOOGLE_SHEET_ID")) and bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
 
 
+def _parse_service_account_json(raw: str) -> dict:
+    """Robustly parse a Google service-account JSON string from an env var.
+
+    Handles three real-world variants we've seen in production:
+      1. Single-line JSON with `\\n` escapes inside the private_key — parses
+         directly via json.loads.
+      2. Pretty-printed multi-line JSON, copy-pasted from the GCP key download
+         (private_key as a quoted multi-line string with escaped \\n inside).
+         Naive parsing fails because real newlines BETWEEN fields are valid
+         JSON whitespace, but real newlines INSIDE the private_key string are
+         not — they have to be escaped.
+      3. Mixed: some fields with \\n escapes, private_key with real newlines,
+         some both. We escape only the newlines inside string values, leave
+         whitespace between tokens alone, and let json.loads do the rest.
+
+    Why we hand-roll this instead of pulling in json5 / PyYAML: this is the
+    only place we deal with messy-JSON env vars, the parser is ~20 lines, and
+    a new dependency for a one-off would be overkill.
+    """
+    # Fast path: well-formed JSON with no real newlines in strings
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Repair path: walk the string, escape real newlines/CR only when inside
+    # a string literal. Track an `escaped` flag so we don't mis-toggle the
+    # in_string state on `\\"` inside a value.
+    fixed_chars = []
+    in_string = False
+    escaped = False
+    for ch in raw:
+        if escaped:
+            fixed_chars.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            fixed_chars.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            fixed_chars.append(ch)
+            continue
+        if in_string and ch == "\n":
+            fixed_chars.append("\\n")
+            continue
+        if in_string and ch == "\r":
+            fixed_chars.append("\\r")
+            continue
+        if in_string and ch == "\t":
+            fixed_chars.append("\\t")
+            continue
+        fixed_chars.append(ch)
+    return json.loads("".join(fixed_chars))
+
+
 def _get_workbook():
     """Open the workbook once and cache it. Returns None when unconfigured
     or when init fails (errors are printed once, then we no-op)."""
@@ -80,12 +137,7 @@ def _get_workbook():
         return None
 
     try:
-        # Fix private key newlines that get mangled when env vars round-trip
-        # through Render's UI: \n in the env value becomes a literal backslash-n.
-        creds_json = creds_json.replace("\\n", "\n").replace("\n", "\\n")
-        creds_data = json.loads(creds_json)
-        if "private_key" in creds_data:
-            creds_data["private_key"] = creds_data["private_key"].replace("\\n", "\n")
+        creds_data = _parse_service_account_json(creds_json)
         creds = Credentials.from_service_account_info(creds_data, scopes=SCOPES)
         gc = gspread.authorize(creds)
         _workbook = gc.open_by_key(sheet_id)
