@@ -124,6 +124,46 @@ def _parse_service_account_json(raw: str) -> dict:
     return json.loads("".join(fixed_chars))
 
 
+def _normalize_private_key_pem(pk: str) -> str:
+    """Repair a PEM private key whose BEGIN/END markers got broken by
+    multi-line env-var encoding.
+
+    The PEM standard requires `-----BEGIN ... KEY-----` and the matching
+    END line each on a single physical line. When a service-account JSON
+    is pasted into a UI that soft-wraps at column ~80 (Render's env var
+    textarea among others), real newlines can land inside the marker
+    strings, e.g. `-----BEGIN PRIVATE\\n  KEY-----`. After json.loads
+    those become real newlines in the parsed value, and the cryptography
+    library reports `Valid PEM but no BEGIN/END delimiters`.
+
+    Repair: collapse internal whitespace in any `-----BEGIN ... KEY-----`
+    or `-----END ... KEY-----` marker so each marker sits on one line.
+    Also ensure exactly one newline between the BEGIN marker and the
+    base64 body, and between the body and the END marker.
+    """
+    import re
+    if not isinstance(pk, str) or "BEGIN" not in pk or "END" not in pk:
+        return pk
+
+    def _collapse(match: "re.Match[str]") -> str:
+        return re.sub(r"\s+", " ", match.group(0))
+
+    # `[\w\s]+?` matches word characters and any whitespace (incl. newlines)
+    # non-greedily up to the next `KEY` token. Anchored on the literal
+    # five-dash framing so we don't accidentally rewrite anything in the
+    # base64 body.
+    pk = re.sub(r"-----\s*BEGIN[\w\s]+?KEY\s*-----", _collapse, pk)
+    pk = re.sub(r"-----\s*END[\w\s]+?KEY\s*-----", _collapse, pk)
+
+    # Ensure newline separation around markers — without it the cryptography
+    # library's PEM tokenizer can still misread the body.
+    pk = re.sub(r"(-----BEGIN [^-]+ KEY-----)\s*", r"\1\n", pk)
+    pk = re.sub(r"\s*(-----END [^-]+ KEY-----)", r"\n\1", pk)
+    if not pk.endswith("\n"):
+        pk = pk + "\n"
+    return pk
+
+
 def _get_workbook():
     """Open the workbook once and cache it. Returns None when unconfigured
     or when init fails (errors are printed once, then we no-op)."""
@@ -138,6 +178,8 @@ def _get_workbook():
 
     try:
         creds_data = _parse_service_account_json(creds_json)
+        if "private_key" in creds_data:
+            creds_data["private_key"] = _normalize_private_key_pem(creds_data["private_key"])
         creds = Credentials.from_service_account_info(creds_data, scopes=SCOPES)
         gc = gspread.authorize(creds)
         _workbook = gc.open_by_key(sheet_id)
