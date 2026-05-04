@@ -126,6 +126,17 @@ def log(
     except Exception as e:
         # Never crash the request because logging failed
         print(f"[WARN] training_log.log failed: {e}")
+
+    # Mirror to Google Sheets ChatLog tab so the record survives Render's
+    # ephemeral filesystem (free tier wipes data/ on every deploy/restart).
+    # Imported lazily to avoid pulling gspread + service-account creds into
+    # processes that don't have Sheets configured.
+    try:
+        import sheets_sync
+        sheets_sync.log_chat_to_sheet(record)
+    except Exception as e:
+        print(f"[WARN] training_log -> sheets mirror failed: {e}")
+
     return interaction_id
 
 
