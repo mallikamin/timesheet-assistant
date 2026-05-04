@@ -702,6 +702,7 @@ async def health(request: Request):
             "supabase_configured": harvest_mock._supabase_configured(),
             "google_oauth_configured": bool(os.getenv("GOOGLE_CLIENT_ID")),
             "harvest_oauth_configured": bool(os.getenv("HARVEST_CLIENT_ID")),
+            "google_sheets_configured": sheets_sync.is_configured(),
         },
         "build": {
             "local_demo_only": LOCAL_DEMO_ONLY,
