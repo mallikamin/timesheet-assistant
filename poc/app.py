@@ -680,13 +680,17 @@ async def execute_tool(tool_name: str, tool_input: Dict, access_token: str) -> s
 
 # --- Health & Readiness ---
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health(request: Request):
     """Lightweight readiness probe for Render + UptimeRobot. Always returns
     200 if the process is alive — degraded downstream deps (Anthropic,
     Harvest, Supabase) are surfaced in the body so they're observable but
     don't fail the probe (we don't want UptimeRobot to alert on transient
-    Anthropic blips)."""
+    Anthropic blips).
+
+    Accepts GET *and* HEAD — UptimeRobot defaults to HEAD probes, and a
+    GET-only route returns 405 which the monitor reads as Down. FastAPI
+    strips the body on HEAD automatically, so the same handler serves both."""
     return {
         "status": "ok",
         "service": "timesheet-assistant",
