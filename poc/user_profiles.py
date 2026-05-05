@@ -96,22 +96,34 @@ def _normalize_email(email: str) -> str:
 
 
 def get_profile(email: str) -> Dict[str, Any]:
-    """Return the user's profile, creating an empty one on first call."""
+    """Return the user's profile, creating an empty one on first call.
+
+    Opportunistically merges a hand-seeded placeholder profile (matching by
+    first-name + org) if one exists — covers the case where the placeholder
+    `miles@thrivepr.com.au` was seeded but the real email is
+    `miles.alexander@thrivepr.com.au`. Once merged the placeholder is removed
+    so the merge is one-shot."""
     key = _normalize_email(email)
     if not key:
         return dict(_DEFAULT_PROFILE)
 
     with _lock:
         profiles = _load()
+        created = False
         if key not in profiles:
             new = dict(_DEFAULT_PROFILE)
             new["email"] = key
             new["updated_at"] = datetime.utcnow().isoformat() + "Z"
             profiles[key] = new
-            _save(profiles)
+            created = True
         # Backfill any missing keys for older saved profiles
         for k, v in _DEFAULT_PROFILE.items():
             profiles[key].setdefault(k, v if not isinstance(v, (list, dict)) else type(v)())
+        # Try to merge a placeholder. _claim_placeholder_into is a no-op if
+        # there's no matching placeholder, so the cost is one dict scan.
+        merged = _claim_placeholder_into(profiles, key)
+        if created or merged:
+            _save(profiles)
         return dict(profiles[key])
 
 
@@ -134,6 +146,98 @@ def update_profile(email: str, patch: Dict[str, Any]) -> Dict[str, Any]:
         return dict(existing)
 
 
+def _org_prefix(email: str) -> str:
+    """Pull the 'org' part of an email domain so cross-tld Thrive emails match.
+    'miles@thrivepr.com.au'    -> 'thrivepr'
+    'hugh@thrivepr.co.nz'      -> 'thrivepr'
+    'tariq@thrive.com'         -> 'thrive'
+    """
+    if "@" not in email:
+        return ""
+    domain = email.split("@", 1)[1].lower()
+    return domain.split(".", 1)[0]
+
+
+def _first_name(email: str) -> str:
+    """Extract the first-name segment of an email local-part.
+    'miles.alexander@x' -> 'miles'; 'miles@x' -> 'miles'."""
+    if "@" not in email:
+        return ""
+    local = email.split("@", 1)[0].lower()
+    return local.split(".", 1)[0]
+
+
+# Fields the placeholder profile owns that the real profile should inherit on
+# merge. assigned_project_codes / common_tasks / harvest_user_id are NOT on
+# this list — those come from Harvest, not from a hand-seeded placeholder.
+_PLACEHOLDER_INHERIT_FIELDS = (
+    "dialect",
+    "vocabulary_hints",
+    "name_aliases",
+    "preferred_response_style",
+    "display_name",
+)
+
+
+def _claim_placeholder_into(profiles: Dict[str, Dict[str, Any]], real_email: str) -> bool:
+    """If a hand-seeded placeholder profile exists for the same first-name +
+    org as `real_email`, copy its dialect/vocab/aliases into the real profile
+    and remove the placeholder.
+
+    This is the fix for the "Miles ran on default vocab" bug — the JSON had
+    `miles@thrivepr.com.au` but the real OAuth email is
+    `miles.alexander@thrivepr.com.au`, so the lookup silently fell through.
+
+    Idempotent: once the placeholder is gone, calling this again is a no-op.
+    Returns True if a merge happened (caller should persist), False otherwise.
+    """
+    real_key = _normalize_email(real_email)
+    if real_key not in profiles:
+        return False
+    fname = _first_name(real_key)
+    org = _org_prefix(real_key)
+    if not fname or not org:
+        return False
+
+    candidates: List[str] = []
+    for k in list(profiles.keys()):
+        if k == real_key:
+            continue
+        if _first_name(k) == fname and _org_prefix(k) == org:
+            candidates.append(k)
+    # If multiple candidates (ambiguous), don't merge — safer to leave defaults
+    # than to inherit the wrong dialect.
+    if len(candidates) != 1:
+        return False
+
+    placeholder = profiles[candidates[0]]
+    real = profiles[real_key]
+    merged = False
+    for field in _PLACEHOLDER_INHERIT_FIELDS:
+        ph_val = placeholder.get(field)
+        real_val = real.get(field)
+        empty_real = (
+            real_val in (None, "", [], {})
+            or (field == "dialect" and real_val == _DEFAULT_PROFILE["dialect"])
+            or (field == "preferred_response_style" and real_val == _DEFAULT_PROFILE["preferred_response_style"])
+        )
+        if ph_val and empty_real:
+            real[field] = ph_val
+            merged = True
+
+    if merged:
+        # Mark provenance — useful for analytics + lets us see which profiles
+        # were seeded vs. fully Harvest-bootstrapped.
+        real["claimed_from_placeholder"] = candidates[0]
+        real["updated_at"] = datetime.utcnow().isoformat() + "Z"
+
+    # Always remove the placeholder once a real profile exists for the user —
+    # leaving it around means the next user who happens to share a first-name
+    # would also try to claim it.
+    profiles.pop(candidates[0], None)
+    return True
+
+
 def bootstrap_from_harvest(
     email: str,
     display_name: str,
@@ -142,7 +246,22 @@ def bootstrap_from_harvest(
 ) -> Dict[str, Any]:
     """Called from the Harvest OAuth callback after we know who the user is and
     which projects they're assigned. Idempotent — only fills empty fields so we
-    don't clobber Malik's hand-tuned dialect overrides."""
+    don't clobber Malik's hand-tuned dialect overrides.
+
+    Also merges any hand-seeded placeholder profile for this user (e.g. the
+    `miles@thrivepr.com.au` placeholder when the real email is
+    `miles.alexander@thrivepr.com.au`) so the dialect / vocab / aliases that
+    were seeded for the stress test actually reach the user."""
+    # Make sure a row exists, then run the placeholder-merge before applying
+    # the Harvest-derived patch — that way the patch wins over placeholder
+    # values for fields it sets (assigned_project_codes, harvest_user_id),
+    # but the placeholder's dialect/vocab survive.
+    get_profile(email)  # ensures row exists
+    with _lock:
+        profiles = _load()
+        if _claim_placeholder_into(profiles, email):
+            _save(profiles)
+
     profile = get_profile(email)
     patch: Dict[str, Any] = {}
     if not profile.get("display_name"):

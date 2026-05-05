@@ -334,6 +334,23 @@
             align-self: flex-start;
             border-bottom-left-radius: 4px;
         }
+        .message.assistant.error {
+            background: #ffebee;
+            color: #b71c1c;
+            border: 1px solid #ffcdd2;
+        }
+        .retry-btn {
+            margin-left: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #b71c1c;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .retry-btn:hover { background: #8e1414; }
         .message.assistant.streaming::after {
             content: '\25ae';
             display: inline-block;
@@ -644,7 +661,14 @@
 <body>
 
 <div class="top-bar">
-    <h1><span>&#9200;</span> Timesheet Assistant</h1>
+    <h1 style="gap:14px;">
+        <a href="/" style="display:inline-flex; align-items:center; background:#fff; padding:5px 12px; border-radius:6px; text-decoration:none;">
+            <img src="/static/thrive-logo.png" alt="thrive"
+                 onerror="this.onerror=null; this.src='/static/thrive-logo.svg';"
+                 style="height:24px; display:block;" />
+        </a>
+        <span style="font-size:13px; font-weight:500; opacity:0.7; padding-left:12px; border-left:1px solid #2a3050;">Timesheet Assistant</span>
+    </h1>
     <div class="top-bar-right">
         <div class="date-display">{{ today }}</div>
         <div class="user-info">
@@ -653,7 +677,9 @@
             {% endif %}
             <span class="user-name">{{ user.name }}</span>
         </div>
+        {% if local_demo_only %}
         <a href="/dashboard" class="logout-btn" style="background: #F4A623; color: #1a1a2e; border-color: #F4A623; font-weight: 600;">📋 Task Dashboard</a>
+        {% endif %}
         <a href="/auth/logout" class="logout-btn">Sign out</a>
         <input type="hidden" id="currentUserName" value="{{ user.name }}">
     </div>
@@ -690,7 +716,7 @@
             </div>
         </div>
         <div class="chat-messages" id="chatMessages">
-            <div class="message assistant">G'day! I'm your timesheet assistant. Just tell me what you've been working on and I'll log it into Harvest for you.
+            <div class="message assistant" id="welcomeBubble">{{ welcome_greeting }}! I'm your timesheet assistant. Just tell me what you've been working on and I'll log it into Harvest for you.
 
 You can say things like:
 - "Spent 2 hours on the Acuity pitch deck this morning"
@@ -771,6 +797,11 @@ What have you been up to?</div>
 
     // --- Chat Functions ---
 
+    // Last user message — used by the retry button when an Anthropic error
+    // bubbles up. Without it the user has to retype their whole message just
+    // because the AI service was momentarily unreachable.
+    let lastUserMessage = '';
+
     function addMessage(role, text) {
         const div = document.createElement('div');
         div.className = `message ${role}`;
@@ -783,6 +814,36 @@ What have you been up to?</div>
         const div = document.createElement('div');
         div.className = 'message system';
         div.textContent = text;
+        chatMessages.appendChild(div);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function addErrorBubble(text) {
+        const div = document.createElement('div');
+        div.className = 'message assistant error';
+        const span = document.createElement('span');
+        span.textContent = text;
+        div.appendChild(span);
+        if (lastUserMessage) {
+            const retry = document.createElement('button');
+            retry.className = 'retry-btn';
+            retry.type = 'button';
+            retry.textContent = '↻ Retry';
+            retry.onclick = () => {
+                if (isProcessing) return;
+                div.remove();
+                chatInput.value = lastUserMessage;
+                // Strip the last user message from history so we don't double-
+                // log it after retry adds a fresh user bubble.
+                if (conversationHistory.length &&
+                    conversationHistory[conversationHistory.length - 1].role === 'user') {
+                    conversationHistory.pop();
+                }
+                sendMessage();
+            };
+            div.appendChild(document.createTextNode(' '));
+            div.appendChild(retry);
+        }
         chatMessages.appendChild(div);
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
@@ -811,11 +872,13 @@ What have you been up to?</div>
         isProcessing = true;
         sendBtn.disabled = true;
         chatInput.value = '';
+        lastUserMessage = text;
 
         addMessage('user', text);
 
         const supportsStream = typeof window.ReadableStream !== 'undefined' && !!window.TextDecoder;
         let succeeded = false;
+        let lastError = null;
 
         if (supportsStream) {
             try {
@@ -823,11 +886,22 @@ What have you been up to?</div>
                 succeeded = true;
             } catch (err) {
                 console.warn('streaming failed, falling back to JSON:', err);
+                lastError = err;
             }
         }
 
         if (!succeeded) {
-            await sendMessageJson(text);
+            try {
+                await sendMessageJson(text);
+                succeeded = true;
+            } catch (err) {
+                lastError = err;
+            }
+        }
+
+        if (!succeeded) {
+            const msg = (lastError && lastError.message) || 'Sorry, something went wrong. Please try again.';
+            addErrorBubble(msg);
         }
 
         isProcessing = false;
@@ -937,8 +1011,9 @@ What have you been up to?</div>
 
     async function sendMessageJson(text) {
         showTyping();
+        let res;
         try {
-            const res = await fetch('/api/chat', {
+            res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -947,26 +1022,32 @@ What have you been up to?</div>
                     history: conversationHistory,
                 }),
             });
-
-            const data = await res.json();
-            hideTyping();
-
-            conversationHistory.push({ role: 'user', content: text });
-            conversationHistory.push({ role: 'assistant', content: data.response });
-
-            addMessage('assistant', data.response);
-
-            if (data.entries_created && data.entries_created.length > 0) {
-                for (const entry of data.entries_created) {
-                    const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
-                    addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
-                }
-                refreshEntries();
-            }
         } catch (err) {
             hideTyping();
-            addMessage('assistant', 'Sorry, something went wrong. Please try again.');
-            console.error(err);
+            // Network failure (offline, DNS, etc.) — let sendMessage's
+            // outer handler render the error bubble + retry button.
+            throw new Error('Network error — check your connection and try again.');
+        }
+
+        if (!res.ok) {
+            hideTyping();
+            throw new Error(`Server error (${res.status}). Please try again.`);
+        }
+
+        const data = await res.json();
+        hideTyping();
+
+        conversationHistory.push({ role: 'user', content: text });
+        conversationHistory.push({ role: 'assistant', content: data.response });
+
+        addMessage('assistant', data.response);
+
+        if (data.entries_created && data.entries_created.length > 0) {
+            for (const entry of data.entries_created) {
+                const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
+                addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+            }
+            refreshEntries();
         }
     }
 
@@ -1515,6 +1596,56 @@ What have you been up to?</div>
 
     // Check Harvest connection on page load
     checkHarvestConnection();
+
+    // --- Today-so-far + conversation resume ---
+    // Fired once on page load. The today-summary stops the user from
+    // double-logging work they already pushed earlier in the day; the
+    // resume restores conversation context so an abandoned mid-flow
+    // ("which project for Sydney WIP?") can be picked up where it stopped.
+    async function loadTodayContext() {
+        try {
+            const res = await fetch('/api/today/summary');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.connected || !data.entries || data.entries.length === 0) return;
+            const total = data.total_hours || 0;
+            const lines = data.entries.slice(0, 6).map(e => {
+                const project = e.project || e.client || '?';
+                const task = e.task || '';
+                const taskPart = task && task !== project ? ` / ${task}` : '';
+                return `• ${project}${taskPart} — ${e.hours}h`;
+            });
+            const more = data.entries.length > 6 ? `\n…and ${data.entries.length - 6} more` : '';
+            const txt = `Already logged ${total}h on Harvest today:\n${lines.join('\n')}${more}\nNew work to add?`;
+            addSystemMessage(txt);
+        } catch (err) {
+            console.warn('today summary failed (non-fatal):', err);
+        }
+    }
+
+    async function resumeConversation() {
+        try {
+            const res = await fetch('/api/chat/recent?limit=10');
+            if (!res.ok) return;
+            const data = await res.json();
+            const msgs = (data.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
+            if (msgs.length === 0) return;
+            // Replay into history so the AI gets full context on next message.
+            for (const m of msgs) {
+                conversationHistory.push({ role: m.role, content: m.content });
+            }
+            // Visual marker so the user knows where today's earlier conversation
+            // ended — they don't see the actual messages replayed (would be
+            // noisy), just a hint that history is loaded.
+            addSystemMessage(`Picking up from earlier today (${msgs.length} messages restored to context).`);
+        } catch (err) {
+            console.warn('chat resume failed (non-fatal):', err);
+        }
+    }
+
+    // Resume FIRST so context arrives before the today-summary banner, then
+    // surface today-so-far. Order matters visually (history → banner → input).
+    resumeConversation().then(loadTodayContext);
 
     // Re-check after OAuth callback redirect
     if (window.location.search.includes('harvest_error')) {
