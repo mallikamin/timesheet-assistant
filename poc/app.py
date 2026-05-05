@@ -149,6 +149,12 @@ app.add_middleware(
 )
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Serve /static (logo + future asset bundle).
+from fastapi.staticfiles import StaticFiles
+_static_dir = BASE_DIR / "static"
+_static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
 
 # Google OAuth
 oauth = OAuth()
@@ -282,6 +288,13 @@ Rules:
 - Be warm and professional. Use first names.
 - Ask as many clarifying questions as needed to get the right project, task, and hours. Never guess.
 
+Disambiguation list rules (CRITICAL — production observation: long lists cause misclicks. Miles picked option 3, then said "amend that to 6" because the list was 13 items long):
+- NEVER show more than 5 options when asking the user to pick a project or task. If the natural list is longer, prune to the top 5.
+- Pruning priority order: (1) tasks listed in this user's Top tasks (last 30d) from their profile, (2) tasks with names that share keywords with what the user just said, (3) the user's Assigned projects only (skip projects they're not on). After applying these, take the top 5.
+- After the 5 options, add a short "Or tell me which one if it's not in this list" line so the user can free-text instead of being trapped in the menu.
+- When the user replies to a numbered list with what looks like a NEW topic ("Thrive admin" after you asked which project for Sydney WIP), DO NOT silently treat it as a fresh entry. First confirm: "Was that for the Sydney WIP I asked about, or a separate item?"
+- When you ask "which task under Project X?" and the user replies with the name of a different project, ask once: "Did you mean a task under [different project] instead of [original project]?" before reframing the entry.
+
 When you're ready to log an entry, include this exact JSON format in your response (the system will parse it):
 ```ENTRY
 {{{{
@@ -352,6 +365,23 @@ REFERENCE — disambiguation rules (apply in order):
 3. If the user has TOP TASKS in their profile, prefer those for ambiguous task selection.
 4. If still ambiguous, list the candidates as numbered options and ask the user to pick a number.
 5. NEVER guess silently. Confidence-low entries should have status="Needs Review" not "Draft".
+
+REFERENCE — self-consistency & data-trust rules (CRITICAL — production observation: when raw Harvest data conflicts with your own reasoning, you tend to flap between trusting the data and trusting your reasoning across turns. These rules anchor you to a single behaviour):
+
+1. **Persistent in-conversation flags.** Once you flag a project-task pairing as suspicious in this conversation (e.g., "Acuity New Growth - BYD" appearing under "Acuity - DENZA NZ B8 Press Loan"), it stays flagged for the entire session. NEVER re-present that exact pairing as a clean option in a later turn, even if the system data still lists it. Track these mentally as the conversation progresses.
+
+2. **Pre-screen tasks at list time.** When you re-list project tasks because the user asked "what tasks are under [project]?", first scan for tasks whose name contains a brand, client or product that conflicts with the project's name (e.g., a task containing "BYD" under a "DENZA" project, or "Afterpay" under an "Acuity" project). When you spot one, mark it inline as `[likely misassigned in Harvest — confirm with admin]` rather than presenting it as a normal numbered option.
+
+3. **When a user pushes back on a previous claim** (e.g. "why did u show me X if it doesn't fit?", "but you just said X was wrong"), follow this three-step pattern in order, in ONE short response:
+   (a) Brief acknowledgement + apology — one line, no over-explanation.
+   (b) Drop the disputed item from your working set for the rest of the conversation.
+   (c) Re-ask your last clarification with the bad option REMOVED — do not just repeat the same numbered list.
+
+4. **Anti-contradiction window.** Within any 5-turn window: if a prior turn of yours said "X doesn't fit / is wrong / shouldn't be here", do NOT list X as a valid option in a subsequent turn. Treat the user's chat history as your own memory.
+
+5. **Use suspect data, but warn.** When the project-task list returned by the system looks wrong, don't refuse to function — but don't pretend it's clean either. Pattern: "Here's the task list for this project. Heads-up: option N (Acuity New Growth - BYD) looks misassigned — it's listed under DENZA but probably belongs under a BYD project. I'd treat it as suspect; confirm with whoever set up the projects." Then proceed with the user's choice unless they want to investigate.
+
+6. **Apology economy.** When corrected, one short apology + immediate corrected action. Don't apologise more than once per topic per conversation. "Sorry, my mistake — let me fix that" is enough; multi-paragraph apologies waste tokens and erode trust.
 
 REFERENCE — edge cases:
 - All-day blocks ("worked on X today"): default 7.5 hours unless the user has logged other entries today; in that case ask "is that the rest of today, or in addition to what you've already logged?"
@@ -481,6 +511,31 @@ async def build_system_prompt_async(
 def get_current_user(request: Request) -> Optional[Dict]:
     """Get the logged-in user from session."""
     return request.session.get("user")
+
+
+def _build_today_summary_note(user_email: str, harvest_access_token: Optional[str]) -> Optional[str]:
+    """Fetch today's existing Harvest entries for the user and return them as
+    a runtime-note string for injection into the system prompt's uncached
+    block. Returns None on any failure or when there's nothing to report —
+    callers append only when a non-empty string comes back.
+
+    Why this exists: a user who logged AFGC in the morning and comes back at
+    7pm should NOT be allowed to silently double-log it. By telling Claude
+    what's already there, the model can prompt 'is this addition or
+    separate?' instead of creating a duplicate."""
+    if not user_email or not harvest_access_token:
+        return None
+    try:
+        profile = user_profiles.get_profile(user_email)
+        hid = profile.get("harvest_user_id")
+        if not hid:
+            return None
+        entries = harvest_api.get_today_entries_cached(hid, harvest_access_token)
+        summary = harvest_api.format_today_summary(entries)
+        return summary or None
+    except Exception as e:
+        print(f"[WARN] today_summary skipped (non-fatal): {e}")
+        return None
 
 
 class ChatRequest(BaseModel):
@@ -863,11 +918,23 @@ async def harvest_disconnect(request: Request):
 
 # --- App Routes ---
 
+def _greeting_for_dialect(dialect: str) -> str:
+    """Pick a culturally-appropriate opener so Hugh (NZ) doesn't get 'G'day'.
+    Falls back to a neutral 'Hi' for any unknown dialect."""
+    d = (dialect or "").lower()
+    if d.startswith("en-nz"):
+        return "Kia ora"
+    if d.startswith("en-au"):
+        return "G'day"
+    return "Hi"
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login")
+    profile = user_profiles.get_profile(user.get("email", ""))
     return templates.TemplateResponse(
         "index.html",
         {
@@ -875,6 +942,12 @@ async def home(request: Request):
             "user": user,
             "users": PILOT_USERS,
             "today": date.today().strftime("%A, %d/%m/%Y"),
+            # Hides the local-only Task Dashboard link on Render production —
+            # without this guard the button rendered unconditionally and 404'd
+            # on /dashboard for every pilot user (the planning routes only
+            # mount when LOCAL_DEMO_ONLY=1).
+            "local_demo_only": LOCAL_DEMO_ONLY,
+            "welcome_greeting": _greeting_for_dialect(profile.get("dialect", "")),
         },
     )
 
@@ -939,6 +1012,10 @@ async def chat(req: ChatRequest, request: Request):
             "NOTE: The user has not connected their Harvest account. "
             "If they try to log time, tell them to click 'Connect Harvest' first."
         )
+
+    today_note = _build_today_summary_note(user.get("email", ""), harvest_access_token)
+    if today_note:
+        runtime_notes.append(today_note)
 
     system_blocks = build_system_prompt(
         user_email=user.get("email"),
@@ -1213,6 +1290,10 @@ async def chat_stream(req: ChatRequest, request: Request):
                 "If they try to log time, tell them to click 'Connect Harvest' first."
             )
 
+        today_note = _build_today_summary_note(user.get("email", ""), harvest_access_token)
+        if today_note:
+            runtime_notes.append(today_note)
+
         prompt_t0 = time.time()
         # Async build — uses httpx.AsyncClient + asyncio.gather under the hood
         # so the 51 Harvest task_assignments calls run truly concurrent on the
@@ -1457,6 +1538,8 @@ async def approve_all_entries(request: Request):
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
             sheets_sync.update_entry_status_in_sheet(entry["id"], "Approved")
             user_profiles.record_approval(user_email, entry)
+            if harvest_user_id:
+                harvest_api.invalidate_today_cache(harvest_user_id, entry.get("date"))
             training_log.log(
                 kind="approve",
                 user_email=user_email,
@@ -1640,6 +1723,9 @@ async def approve_entry(entry_id: str, request: Request):
     sheets_sync.update_entry_status_in_sheet(entry_id, "Approved")
     # Per-user learning: bump common_tasks frequency + prepend to recent entries
     user_profiles.record_approval(user_email, entry)
+    # Bust the today-summary cache so the next chat sees this entry immediately
+    if harvest_user_id:
+        harvest_api.invalidate_today_cache(harvest_user_id, entry.get("date"))
     # Training-data signal: positive label on the AI's original suggestion
     training_log.log(
         kind="approve",
@@ -2310,7 +2396,90 @@ async def get_me(request: Request):
         return {"authenticated": False}
     has_calendar = bool(request.session.get("google_token", {}).get("access_token"))
     has_harvest = bool(request.session.get("harvest_token", {}).get("access_token"))
-    return {"authenticated": True, "has_calendar": has_calendar, "has_harvest": has_harvest, **user}
+    profile = user_profiles.get_profile(user.get("email", ""))
+    return {
+        "authenticated": True,
+        "has_calendar": has_calendar,
+        "has_harvest": has_harvest,
+        "dialect": profile.get("dialect") or "en-AU-Sydney",
+        "display_name": profile.get("display_name") or user.get("name", ""),
+        **user,
+    }
+
+
+@app.get("/api/today/summary")
+async def today_summary(request: Request):
+    """Today's existing Harvest entries for the logged-in user.
+
+    Used by the frontend to surface a one-line 'you've already logged Xh today'
+    banner on page load, so the user doesn't accidentally re-log work the AI
+    can't see in the local entries panel (e.g. entries created via Harvest
+    web UI, or yesterday's leftovers approved this morning)."""
+    user = get_current_user(request)
+    if not user:
+        return {"authenticated": False, "entries": [], "total_hours": 0.0}
+
+    harvest_token = request.session.get("harvest_token") or {}
+    access_token = harvest_token.get("access_token")
+    if not access_token:
+        return {"authenticated": True, "connected": False, "entries": [], "total_hours": 0.0}
+
+    profile = user_profiles.get_profile(user.get("email", ""))
+    hid = profile.get("harvest_user_id")
+    if not hid:
+        return {"authenticated": True, "connected": True, "entries": [], "total_hours": 0.0}
+
+    try:
+        entries = harvest_api.get_today_entries_cached(hid, access_token)
+        compact = []
+        total = 0.0
+        for e in entries:
+            hrs = float(e.get("hours") or 0)
+            total += hrs
+            compact.append({
+                "client": (e.get("client") or {}).get("name") or "",
+                "project": (e.get("project") or {}).get("name") or "",
+                "task": (e.get("task") or {}).get("name") or "",
+                "hours": hrs,
+                "notes": (e.get("notes") or "").strip(),
+            })
+        return {
+            "authenticated": True,
+            "connected": True,
+            "entries": compact,
+            "total_hours": round(total, 2),
+        }
+    except Exception as e:
+        print(f"[WARN] /api/today/summary failed: {e}")
+        return {"authenticated": True, "connected": True, "entries": [], "total_hours": 0.0}
+
+
+@app.get("/api/chat/recent")
+async def chat_recent(request: Request, limit: int = 10):
+    """Return the last N chat messages from today so the page can resume an
+    abandoned conversation. Critical when the user closes the tab mid-flow
+    (the AI asked 'which project for Sydney WIP?' and the user comes back
+    later without context — without this, they re-ask from scratch)."""
+    user = get_current_user(request)
+    if not user:
+        return {"authenticated": False, "messages": []}
+    user_name = user.get("name", "")
+    try:
+        msgs = harvest_mock.get_chat_history(user_name, limit=max(1, min(limit, 50))) or []
+    except Exception as e:
+        print(f"[WARN] /api/chat/recent failed: {e}")
+        return {"authenticated": True, "messages": []}
+
+    # Filter to today only — we don't want to feed the AI a week of stale
+    # context (cache invalidation + token cost). The cutoff is today UTC,
+    # which roughly aligns with most users' local 'today' for AU/NZ.
+    today_iso = date.today().isoformat()
+    today_msgs = []
+    for m in msgs:
+        ts = (m.get("created_at") or m.get("ts") or "")
+        if ts.startswith(today_iso):
+            today_msgs.append({"role": m.get("role", ""), "content": m.get("content", "")})
+    return {"authenticated": True, "messages": today_msgs[-max(1, min(limit, 50)):]}
 
 
 # --- Task Management Board (LOCAL demo — gated behind LOCAL_DEMO_ONLY=1) ---

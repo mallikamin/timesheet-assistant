@@ -20,6 +20,12 @@ _user_cache = None
 _user_cache_time = 0
 CACHE_TTL = 3600  # 1 hour — projects/users rarely change
 
+# Per-user "today's entries" cache. Short TTL because the user is actively
+# logging entries and we want the AI to see them within seconds. Keyed by
+# (user_id, spent_date). Invalidated explicitly after an approve push.
+_today_cache: Dict[str, Dict] = {}
+_TODAY_CACHE_TTL = 30  # seconds
+
 
 def _headers(access_token: str = None) -> Dict[str, str]:
     """Generate Harvest API headers. Uses OAuth token if provided, else falls back to PAT."""
@@ -233,6 +239,15 @@ def get_projects_with_tasks(access_token: str = None) -> List[Dict]:
 
     if _project_cache and (time.time() - _cache_time) < CACHE_TTL:
         return _project_cache
+
+    # Fast bail-out when no creds — without this, every caller eats a Harvest
+    # 401 round-trip (~300-700ms) since the failure path doesn't update
+    # _cache_time. Matters for /planning where 4+ reconciliation calls land
+    # before the first one can populate the cache.
+    if not is_configured() and not access_token:
+        _project_cache = []
+        _cache_time = time.time()
+        return []
 
     try:
         resp = httpx.get(
@@ -453,6 +468,106 @@ def get_time_entries(spent_date: str = None, user_id: int = None, access_token: 
     except Exception as e:
         print(f"Harvest get_time_entries error: {e}")
         return []
+
+
+def _today_iso() -> str:
+    from datetime import date as _date
+    return _date.today().isoformat()
+
+
+def get_today_entries_cached(user_id: int, access_token: str, spent_date: Optional[str] = None) -> List[Dict]:
+    """Return today's Harvest time entries for one user, cached for ~30s.
+
+    Short TTL because the user is actively logging — we want the next chat
+    message to see the entry they just approved. invalidate_today_cache()
+    is called by the approve handler so the AI never gives stale 'already
+    logged' advice."""
+    if not user_id:
+        return []
+    spent_date = spent_date or _today_iso()
+    key = f"{user_id}:{spent_date}"
+    entry = _today_cache.get(key)
+    if entry and (time.time() - entry["ts"]) < _TODAY_CACHE_TTL:
+        return entry["entries"]
+
+    fetched = get_time_entries(spent_date=spent_date, user_id=user_id, access_token=access_token)
+    _today_cache[key] = {"ts": time.time(), "entries": fetched}
+    return fetched
+
+
+def invalidate_today_cache(user_id: int, spent_date: Optional[str] = None) -> None:
+    """Bust the today-entries cache after a write so the next chat sees fresh
+    state. Called from /api/entries/{id}/approve and approve-all."""
+    if not user_id:
+        return
+    spent_date = spent_date or _today_iso()
+    _today_cache.pop(f"{user_id}:{spent_date}", None)
+
+
+def format_today_summary(entries: List[Dict]) -> str:
+    """Render today's entries as a compact, AI-readable summary. Empty string
+    when there are no entries — caller can skip injection so we don't waste
+    tokens on 'you haven't logged anything yet' (the AI already knows that)."""
+    if not entries:
+        return ""
+    lines: List[str] = []
+    total_hours = 0.0
+    for e in entries:
+        hrs = float(e.get("hours") or 0)
+        total_hours += hrs
+        client = (e.get("client") or {}).get("name") or e.get("client_name") or "?"
+        project = (e.get("project") or {}).get("name") or e.get("project_name") or "?"
+        task = (e.get("task") or {}).get("name") or e.get("task_name") or "?"
+        notes = (e.get("notes") or "").strip()
+        notes_preview = f' — "{notes[:60]}"' if notes else ""
+        lines.append(f"- {project} / {task} — {hrs}h{notes_preview}")
+    summary = (
+        "ALREADY LOGGED IN HARVEST FOR TODAY (do NOT re-suggest these as new entries; "
+        "if the user describes work that matches one of these, ask if it's an addition "
+        f"to the existing entry or a separate block):\n" + "\n".join(lines) +
+        f"\nTotal so far today: {total_hours:.2f}h"
+    )
+    return summary
+
+
+def get_time_entries_range(
+    from_date: str,
+    to_date: str,
+    project_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    access_token: str = None,
+) -> List[Dict]:
+    """Get all time entries in a [from_date, to_date] range, paginating through
+    Harvest's 100/page limit. Used by the Planning module's reconciliation view.
+    """
+    if not is_configured() and not access_token:
+        return []
+    out: List[Dict] = []
+    page = 1
+    try:
+        while True:
+            params = {"from": from_date, "to": to_date, "per_page": 100, "page": page}
+            if project_id:
+                params["project_id"] = project_id
+            if user_id:
+                params["user_id"] = user_id
+            resp = httpx.get(
+                f"{HARVEST_BASE}/time_entries",
+                headers=_headers(access_token),
+                params=params,
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                break
+            payload = resp.json()
+            out.extend(payload.get("time_entries", []))
+            if not payload.get("next_page"):
+                break
+            page = payload["next_page"]
+        return out
+    except Exception as e:
+        print(f"Harvest get_time_entries_range error: {e}")
+        return out
 
 
 def reassign_time_entry(harvest_id: int, new_user_id: int, access_token: str = None) -> Optional[Dict]:
