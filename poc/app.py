@@ -2513,47 +2513,6 @@ if LOCAL_DEMO_ONLY:
 
     app.include_router(tasks_routes.router)
 
-    # --- Planning module (Master Users + Project Plans + Reconciliation) ---
-    import planning_routes
-    import users_db as _users_db
-    import plans_db as _plans_db
-
-    # Seed demo data on first boot so the screenshare lands on something visual.
-    try:
-        _users_db.seed_if_empty()
-        _plans_db.seed_if_empty()
-    except Exception as e:
-        print(f"[WARN] Planning seed failed: {e}")
-
-    app.include_router(planning_routes.router)
-
-    @app.get("/planning", response_class=HTMLResponse)
-    async def planning_index(request: Request):
-        user = get_current_user(request)
-        if not user:
-            return RedirectResponse(url="/login")
-        return templates.TemplateResponse("planning.html", {"request": request, "user": user})
-
-    @app.get("/planning/users", response_class=HTMLResponse)
-    async def planning_users_page(request: Request):
-        user = get_current_user(request)
-        if not user:
-            return RedirectResponse(url="/login")
-        return templates.TemplateResponse("planning_users.html", {"request": request, "user": user})
-
-    @app.get("/planning/plans/{plan_id}", response_class=HTMLResponse)
-    async def planning_plan_page(request: Request, plan_id: str):
-        user = get_current_user(request)
-        if not user:
-            return RedirectResponse(url="/login")
-        plan = _plans_db.get_plan(plan_id)
-        if not plan:
-            return RedirectResponse(url="/planning")
-        return templates.TemplateResponse(
-            "planning_plan.html",
-            {"request": request, "user": user, "plan": plan},
-        )
-
 
 if __name__ == "__main__":
     print("\n  Timesheet Assistant POC")
