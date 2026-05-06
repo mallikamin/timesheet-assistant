@@ -577,6 +577,108 @@
             background: #e8f5e9;
             color: #2e7d32;
         }
+
+        /* Lean approved-entries section (Option C) */
+        .entry-section-header {
+            font-size: 11px;
+            font-weight: 600;
+            color: #78909c;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 10px 4px 4px 4px;
+            border-top: 1px solid #eceff1;
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+        .entry-section-header:first-child {
+            border-top: none;
+            margin-top: 0;
+        }
+        .entry-section-header .ssh-meta {
+            font-weight: 400;
+            color: #90a4ae;
+            text-transform: none;
+            letter-spacing: 0;
+            font-size: 11px;
+        }
+        .entry-row {
+            background: #f9fdf9;
+            border: 1px solid #e8f0e8;
+            border-left: 3px solid #4caf50;
+            border-radius: 6px;
+            padding: 7px 28px 7px 10px;
+            font-size: 12px;
+            color: #37474f;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            position: relative;
+            cursor: pointer;
+            line-height: 1.35;
+        }
+        .entry-row:hover { background: #f1f8e9; border-color: #c8e6c9; }
+        .entry-row .er-check { color: #4caf50; font-weight: 600; flex-shrink: 0; }
+        .entry-row .er-hours { font-weight: 600; color: #1a1a2e; flex-shrink: 0; }
+        .entry-row .er-text {
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .entry-row .er-date {
+            color: #90a4ae;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+        .entry-row .entry-delete {
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+
+        /* Delete confirmation modal */
+        .confirm-overlay {
+            position: fixed; inset: 0; background: rgba(20,20,40,0.55);
+            display: none; align-items: center; justify-content: center;
+            z-index: 2000;
+        }
+        .confirm-overlay.open { display: flex; }
+        .confirm-modal {
+            background: #fff; border-radius: 10px; width: min(420px, 92vw);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+            padding: 22px 22px 18px 22px;
+        }
+        .confirm-modal h4 {
+            margin: 0 0 8px 0; font-size: 16px; color: #1a1a2e;
+        }
+        .confirm-modal p {
+            margin: 0 0 18px 0; font-size: 13px; color: #455a64; line-height: 1.5;
+        }
+        .confirm-modal .confirm-warn-icon {
+            display: inline-block; margin-right: 8px;
+        }
+        .confirm-modal.destructive h4 { color: #c62828; }
+        .confirm-actions {
+            display: flex; justify-content: flex-end; gap: 8px;
+        }
+        .btn-confirm-cancel {
+            background: #eceff1; color: #37474f; border: 1px solid #cfd8dc;
+            padding: 7px 16px; border-radius: 5px; font-size: 13px;
+            font-weight: 500; cursor: pointer;
+        }
+        .btn-confirm-cancel:hover { background: #cfd8dc; }
+        .btn-confirm-cancel:focus { outline: 2px solid #1a1a2e; outline-offset: 2px; }
+        .btn-confirm-delete {
+            background: #455a64; color: #fff; border: none;
+            padding: 7px 16px; border-radius: 5px; font-size: 13px;
+            font-weight: 500; cursor: pointer;
+        }
+        .btn-confirm-delete:hover { background: #37474f; }
+        .btn-confirm-delete.destructive { background: #e53935; }
+        .btn-confirm-delete.destructive:hover { background: #c62828; }
         .entry-actions {
             display: flex;
             gap: 6px;
@@ -1211,13 +1313,77 @@ What have you been up to?</div>
             }
 
             updateEntriesSummary();
-            entriesList.innerHTML = '';
-            for (const entry of cachedEntries) {
-                entriesList.appendChild(buildEntryCard(entry));
-            }
+            renderEntriesList();
         } catch (err) {
             console.error('Failed to load entries:', err);
         }
+    }
+
+    // Split into pending (Draft / Needs Review) and approved sections.
+    // Drafts stay full-size at the top \u2014 that's the actionable queue.
+    // Approved collapses into a scannable list of one-line rows below.
+    function renderEntriesList() {
+        entriesList.innerHTML = '';
+        const pending = cachedEntries.filter(e => e.status !== 'Approved');
+        const approved = cachedEntries.filter(e => e.status === 'Approved');
+
+        if (pending.length > 0) {
+            const header = document.createElement('div');
+            header.className = 'entry-section-header';
+            const totalHours = pending.reduce((sum, e) => sum + Number(e.hours || 0), 0);
+            header.innerHTML = `<span>Drafts</span><span class="ssh-meta">${pending.length} \u00b7 ${totalHours.toFixed(2)}h</span>`;
+            entriesList.appendChild(header);
+            for (const entry of pending) {
+                entriesList.appendChild(buildEntryCard(entry));
+            }
+        }
+
+        if (approved.length > 0) {
+            const header = document.createElement('div');
+            header.className = 'entry-section-header';
+            const totalHours = approved.reduce((sum, e) => sum + Number(e.hours || 0), 0);
+            header.innerHTML = `<span>Approved</span><span class="ssh-meta">${approved.length} \u00b7 ${totalHours.toFixed(2)}h</span>`;
+            entriesList.appendChild(header);
+            for (const entry of approved) {
+                entriesList.appendChild(buildEntryRow(entry));
+            }
+        }
+    }
+
+    // Lean one-line row for approved entries. Click anywhere on the row
+    // (except the \u00d7 button) toggles to a full card and back.
+    function buildEntryRow(entry) {
+        const dateObj = new Date(entry.date + 'T00:00:00');
+        const dateStr = dateObj.toLocaleDateString('en-AU', {
+            weekday: 'short', day: 'numeric', month: 'short'
+        });
+        const taskBit = entry.task ? ` \u2014 ${entry.task}` : '';
+        const row = document.createElement('div');
+        row.className = 'entry-row';
+        row.dataset.entryId = entry.id;
+        row.title = `${entry.client} \u00b7 [${entry.project_code}] ${entry.project_name}${taskBit}${entry.notes ? ' \u00b7 ' + entry.notes : ''}`;
+        row.innerHTML = `
+            <span class="er-check">\u2713</span>
+            <span class="er-hours">${entry.hours}h</span>
+            <span class="er-text">${entry.project_name}${taskBit}</span>
+            <span class="er-date">${dateStr}</span>
+            <button class="entry-delete" onclick="event.stopPropagation(); deleteEntry('${entry.id}')" title="Delete entry">&times;</button>
+        `;
+        row.addEventListener('click', () => {
+            // Replace the lean row with a full card; clicking the card's
+            // body again collapses back to lean. The \u00d7 still works because
+            // buildEntryCard renders its own delete button.
+            const card = buildEntryCard(entry);
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', (ev) => {
+                // Don't collapse when clicking the \u00d7 button.
+                if (ev.target.closest('.entry-delete')) return;
+                const lean = buildEntryRow(entry);
+                card.replaceWith(lean);
+            });
+            row.replaceWith(card);
+        });
+        return row;
     }
 
     function buildEntryCard(entry) {
@@ -1273,11 +1439,69 @@ What have you been up to?</div>
         document.getElementById('approveAllBtn').style.display = hasDrafts ? 'block' : 'none';
     }
 
+    // Show a modal asking the user to confirm deletion. Copy + button
+    // emphasis differ depending on whether the entry has been pushed to
+    // Harvest (harvest_id truthy) \u2014 pushed entries are an irreversible
+    // round-trip across two systems, so we surface that loudly.
+    function confirmDelete(entry) {
+        return new Promise((resolve) => {
+            const isInHarvest = !!entry.harvest_id;
+            const overlay = document.createElement('div');
+            overlay.className = 'confirm-overlay open';
+            overlay.setAttribute('role', 'dialog');
+            overlay.setAttribute('aria-modal', 'true');
+
+            const title = isInHarvest ? 'Delete this entry?' : 'Delete this draft?';
+            const body = isInHarvest
+                ? `<span class="confirm-warn-icon">\u26a0\ufe0f</span>It will be removed from your draft list <strong>and from Harvest</strong>. This cannot be undone.`
+                : `It hasn\u2019t been pushed to Harvest yet \u2014 you can re-add it from chat at any time.`;
+            const confirmLabel = isInHarvest ? 'Delete from Harvest' : 'Delete draft';
+
+            overlay.innerHTML = `
+                <div class="confirm-modal${isInHarvest ? ' destructive' : ''}">
+                    <h4>${title}</h4>
+                    <p>${body}</p>
+                    <div class="confirm-actions">
+                        <button class="btn-confirm-cancel" data-role="cancel">Cancel</button>
+                        <button class="btn-confirm-delete${isInHarvest ? ' destructive' : ''}" data-role="confirm">${confirmLabel}</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            const cleanup = (result) => {
+                document.removeEventListener('keydown', onKey);
+                overlay.remove();
+                resolve(result);
+            };
+            const onKey = (e) => {
+                if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+            };
+            document.addEventListener('keydown', onKey);
+            overlay.addEventListener('click', (e) => {
+                // Click outside the modal cancels.
+                if (e.target === overlay) cleanup(false);
+            });
+            overlay.querySelector('[data-role="cancel"]').addEventListener('click', () => cleanup(false));
+            overlay.querySelector('[data-role="confirm"]').addEventListener('click', () => cleanup(true));
+
+            // Safer-by-default: focus Cancel so an absent-minded Enter
+            // press never destroys a Harvest entry.
+            setTimeout(() => overlay.querySelector('[data-role="cancel"]').focus(), 0);
+        });
+    }
+
     async function deleteEntry(entryId) {
         const card = entriesList.querySelector(`[data-entry-id="${entryId}"]`);
         if (!card) return;
 
-        // Optimistic: visually mark the card as pending and ignore further clicks
+        const entry = cachedEntries.find(e => e.id === entryId);
+        if (!entry) return;
+
+        const ok = await confirmDelete(entry);
+        if (!ok) return;
+
+        // Optimistic: visually mark the row as pending and ignore further clicks
         // on it. We don't fully remove yet \u2014 if the backend rejects the delete,
         // we want to be able to restore the visual state without rebuilding.
         card.style.transition = 'opacity 150ms ease';
@@ -1288,11 +1512,14 @@ What have you been up to?</div>
             const res = await fetch(`/api/entries/${entryId}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-                card.remove();
                 cachedEntries = cachedEntries.filter(e => e.id !== entryId);
                 editStash.delete(entryId);
                 if (cachedEntries.length === 0) {
                     entriesList.innerHTML = '<div class="empty-entries">Your time entries will appear here as you tell me what you worked on.</div>';
+                } else {
+                    // Re-render so section headers + counts stay accurate
+                    // (e.g. removing the last approved entry hides that section).
+                    renderEntriesList();
                 }
                 updateEntriesSummary();
                 addSystemMessage('Entry removed.');
