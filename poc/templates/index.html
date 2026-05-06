@@ -1779,6 +1779,11 @@ What have you been up to?</div>
         const notesEl = card.querySelector('.entry-notes');
         const actionsEl = card.querySelector('.entry-actions');
 
+        // Source the original ISO date from the cache (entry.date is YYYY-MM-DD)
+        // rather than the localised display string, which can't be re-parsed
+        // reliably across locales.
+        const entry = cachedEntries.find(e => e.id === entryId);
+        const currentDate = entry ? entry.date : '';
         const currentNotes = notesEl.textContent;
         const hoursText = card.querySelector('.entry-hours').textContent;
         const currentHours = parseFloat(hoursText);
@@ -1792,6 +1797,9 @@ What have you been up to?</div>
                 <label style="font-size:11px;color:#666;">Hours:</label>
                 <input type="number" class="entry-edit-field" id="editHours-${entryId}"
                        value="${currentHours}" step="0.25" min="0.08">
+                <label style="font-size:11px;color:#666;margin-top:4px;display:block;">Date:</label>
+                <input type="date" class="entry-edit-field" id="editDate-${entryId}"
+                       value="${currentDate}">
                 <label style="font-size:11px;color:#666;margin-top:4px;display:block;">Notes:</label>
                 <input type="text" class="entry-edit-field" id="editNotes-${entryId}"
                        value="${currentNotes}">
@@ -1815,9 +1823,22 @@ What have you been up to?</div>
         }
     }
 
+    // Render an ISO date (YYYY-MM-DD) using the same locale + format that
+    // buildEntryCard / buildEntryRow use, so optimistic repaints match the
+    // original card style exactly.
+    function formatEntryDate(isoDate) {
+        if (!isoDate) return '';
+        const d = new Date(isoDate + 'T00:00:00');
+        return d.toLocaleDateString('en-AU', {
+            weekday: 'short', day: 'numeric', month: 'short'
+        });
+    }
+
     async function saveEdit(entryId) {
         const hours = parseFloat(document.getElementById(`editHours-${entryId}`).value);
         const notes = document.getElementById(`editNotes-${entryId}`).value;
+        const dateInput = document.getElementById(`editDate-${entryId}`);
+        const date = dateInput ? dateInput.value : '';
         const card = entriesList.querySelector(`[data-entry-id="${entryId}"]`);
         const entry = cachedEntries.find(e => e.id === entryId);
         if (!card || !entry) {
@@ -1830,29 +1851,38 @@ What have you been up to?</div>
         // and persist in the background. The user feels instant feedback.
         const previousHours = entry.hours;
         const previousNotes = entry.notes;
+        const previousDate = entry.date;
         entry.hours = hours;
         entry.notes = notes;
+        if (date) entry.date = date;
 
         const hoursEl = card.querySelector('.entry-hours');
         const notesEl = card.querySelector('.entry-notes');
+        const dateEl = card.querySelector('.entry-date');
         if (hoursEl) hoursEl.textContent = `${hours}h • ${entry.task}`;
         if (notesEl) notesEl.textContent = notes || '';
+        if (dateEl && date) dateEl.textContent = formatEntryDate(date);
         cancelEdit(entryId);  // restores the action buttons from stash
         updateEntriesSummary();
+
+        const payload = { hours, notes };
+        if (date) payload.date = date;
 
         try {
             const res = await fetch(`/api/entries/${entryId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hours, notes }),
+                body: JSON.stringify(payload),
             });
             const data = await res.json();
             if (!data.success) {
                 // Revert
                 entry.hours = previousHours;
                 entry.notes = previousNotes;
+                entry.date = previousDate;
                 if (hoursEl) hoursEl.textContent = `${previousHours}h • ${entry.task}`;
                 if (notesEl) notesEl.textContent = previousNotes || '';
+                if (dateEl) dateEl.textContent = formatEntryDate(previousDate);
                 updateEntriesSummary();
                 addSystemMessage('Save failed — change reverted.');
             }
@@ -1860,8 +1890,10 @@ What have you been up to?</div>
             console.error('Failed to update entry:', err);
             entry.hours = previousHours;
             entry.notes = previousNotes;
+            entry.date = previousDate;
             if (hoursEl) hoursEl.textContent = `${previousHours}h • ${entry.task}`;
             if (notesEl) notesEl.textContent = previousNotes || '';
+            if (dateEl) dateEl.textContent = formatEntryDate(previousDate);
             updateEntriesSummary();
             addSystemMessage('Save failed — change reverted.');
         }
