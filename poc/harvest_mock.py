@@ -116,6 +116,29 @@ def get_entries(user: str = None, entry_date: str = None) -> List[Dict]:
     return [_frontend_remap(r) for r in rows]
 
 
+def get_entry_by_id(entry_id: str) -> Optional[Dict]:
+    """Single-row lookup by entry ID. Cheaper than get_entries() which
+    pulls every row and linearly searches — matters at Approve time
+    when the user has hundreds of entries.
+
+    Returns the frontend-remapped dict (with `user`, `date`, `harvest_id`
+    keys) or None if no match."""
+    sb = _get_client()
+    if sb is None:
+        for e in _in_memory_entries:
+            if e.get("id") == entry_id:
+                return _frontend_remap(dict(e))
+        return None
+    try:
+        result = sb.table("time_entries").select("*").eq("id", entry_id).limit(1).execute()
+        rows = result.data or []
+        if rows:
+            return _frontend_remap(rows[0])
+    except Exception as e:
+        print(f"[WARN] Supabase get_entry_by_id failed: {e}")
+    return None
+
+
 def update_entry(entry_id: str, **kwargs) -> Optional[Dict]:
     """Update an entry by ID."""
     if "date" in kwargs:

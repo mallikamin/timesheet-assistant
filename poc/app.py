@@ -18,7 +18,7 @@ import httpx
 import uvicorn
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -2259,7 +2259,7 @@ def _format_resolution_error(client_name: str, task_name: str, candidates: List)
 
 
 @app.post("/api/entries/approve-all")
-async def approve_all_entries(request: Request):
+async def approve_all_entries(request: Request, background_tasks: BackgroundTasks):
     """Approve all draft entries for the current user."""
     user = get_current_user(request)
     if not user:
@@ -2346,12 +2346,15 @@ async def approve_all_entries(request: Request):
                 push_error = _format_resolution_error(client_name, task_name, diag.get("candidates", []))
 
         if harvest_entry:
+            # Foreground: authoritative status flip + cache invalidation
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
-            sheets_sync.update_entry_status_in_sheet(entry["id"], "Approved")
-            user_profiles.record_approval(user_email, entry)
             if harvest_user_id:
                 harvest_api.invalidate_today_cache(harvest_user_id, entry.get("date"))
-            training_log.log(
+            # Background: best-effort secondary writes (Sheet mirror, profile, training log)
+            background_tasks.add_task(sheets_sync.update_entry_status_in_sheet, entry["id"], "Approved")
+            background_tasks.add_task(user_profiles.record_approval, user_email, entry)
+            background_tasks.add_task(
+                training_log.log,
                 kind="approve",
                 user_email=user_email,
                 user_name=user.get("name", ""),
@@ -2463,8 +2466,14 @@ async def update_entry(entry_id: str, request: Request):
 
 
 @app.post("/api/entries/{entry_id}/approve")
-async def approve_entry(entry_id: str, request: Request):
-    """Approve a draft entry: push to Harvest, update status."""
+async def approve_entry(entry_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Approve a draft entry: push to Harvest, update status.
+
+    Optimised request path: the foreground work is just the Harvest POST
+    (which the user is waiting on) + the Supabase status flip (which
+    must be authoritative). Sheet sync, profile updates, training-log
+    writes — all backgrounded via BackgroundTasks so the response
+    returns ~500-2000ms sooner."""
     user = get_current_user(request)
     if not user:
         return {"success": False, "error": "Not authenticated"}
@@ -2482,14 +2491,8 @@ async def approve_entry(entry_id: str, request: Request):
         else:
             return {"success": False, "error": "Harvest token expired"}
 
-    # Find the entry
-    entries = harvest_mock.get_entries()
-    entry = None
-    for e in entries:
-        if e.get("id") == entry_id:
-            entry = e
-            break
-
+    # Find the entry — single-row lookup, not full table scan
+    entry = harvest_mock.get_entry_by_id(entry_id)
     if not entry:
         return {"success": False, "error": "Entry not found"}
 
@@ -2569,17 +2572,20 @@ async def approve_entry(entry_id: str, request: Request):
             "task": entry.get("project_name", entry.get("task", "")),
         }
 
-    # Update Supabase
+    # Update Supabase synchronously — this is the authoritative state
+    # change; if it fails the user must know (don't background it).
     harvest_mock.update_entry(entry_id, status="Approved", harvest_id=harvest_entry["id"])
-    # Update Google Sheet
-    sheets_sync.update_entry_status_in_sheet(entry_id, "Approved")
-    # Per-user learning: bump common_tasks frequency + prepend to recent entries
-    user_profiles.record_approval(user_email, entry)
     # Bust the today-summary cache so the next chat sees this entry immediately
     if harvest_user_id:
         harvest_api.invalidate_today_cache(harvest_user_id, entry.get("date"))
-    # Training-data signal: positive label on the AI's original suggestion
-    training_log.log(
+
+    # Background everything else — they're best-effort secondary writes
+    # (Google Sheet mirror, per-user profile learning, training log).
+    # Failure here is logged but doesn't affect the user's confirmation.
+    background_tasks.add_task(sheets_sync.update_entry_status_in_sheet, entry_id, "Approved")
+    background_tasks.add_task(user_profiles.record_approval, user_email, entry)
+    background_tasks.add_task(
+        training_log.log,
         kind="approve",
         user_email=user_email,
         user_name=user.get("name", ""),

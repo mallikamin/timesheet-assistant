@@ -835,7 +835,10 @@ class PushErrorSurfacingTests(unittest.IsolatedAsyncioTestCase):
     not just success: false."""
 
     async def test_approve_returns_resolution_error_on_push_failure(self):
-        # Simulate the failure path: push_entry returns None.
+        # Simulate the failure path: resolver returns no match → user gets the
+        # candidate-list error. Updated for Path B's signature change
+        # (BackgroundTasks param) + new harvest_mock.get_entry_by_id lookup.
+        from fastapi import BackgroundTasks
         request = MagicMock()
         request.session = {
             "user": {"email": "u@example.com", "name": "U"},
@@ -844,25 +847,25 @@ class PushErrorSurfacingTests(unittest.IsolatedAsyncioTestCase):
                 "expires_at": (datetime.utcnow() + timedelta(days=1)).timestamp(),
             },
         }
+        fake_entry = {
+            "id": "e1",
+            "client": "Acuity",
+            "project_code": "ACU",  # no hyphen -> skip ID fast-path
+            "project_name": "Existing Growth FY26",
+            "task": "Existing Growth FY26",
+            "hours": 2.0,
+            "notes": "",
+            "date": "2026-05-06",
+            "status": "Draft",
+        }
         with patch("app.get_current_user", return_value=request.session["user"]), \
              patch("app.harvest_oauth.ensure_valid_token", return_value=request.session["harvest_token"]), \
-             patch("app.harvest_mock.get_entries", return_value=[
-                 {
-                     "id": "e1",
-                     "client": "Acuity",
-                     "project_code": "ACU",  # no hyphen -> skip ID branch, go straight to name resolution
-                     "project_name": "Existing Growth FY26",
-                     "task": "Existing Growth FY26",
-                     "hours": 2.0,
-                     "notes": "",
-                     "date": "2026-05-06",
-                     "status": "Draft",
-                 }
-             ]), \
+             patch("app.harvest_mock.get_entry_by_id", return_value=fake_entry), \
+             patch("app.harvest_api.get_projects_with_tasks_async", return_value=[]), \
              patch("app.harvest_api.resolve_user_id", return_value=42), \
-             patch("app.harvest_api.create_time_entry", return_value=None), \
-             patch("app.harvest_api.push_entry", return_value=None):
-            out = await app_mod.approve_entry("e1", request)
+             patch("app.harvest_api.resolve_ids_with_diagnostics",
+                   return_value={"resolved": None, "candidates": []}):
+            out = await app_mod.approve_entry("e1", request, BackgroundTasks())
         self.assertFalse(out["success"])
         self.assertIn("could not resolve", out["error"].lower())
         self.assertEqual(out["client"], "Acuity")

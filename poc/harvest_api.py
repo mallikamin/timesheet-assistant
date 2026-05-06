@@ -130,18 +130,26 @@ def resolve_user_id(email: str, access_token: str = None) -> Optional[int]:
 
 
 async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
-    """Async version of get_projects_with_tasks — uses httpx.AsyncClient with
-    a SHARED connection pool and asyncio.gather to parallelize the per-project
-    task-assignment calls. With ~107 active projects on Thrive's account this
-    is 108 HTTPS round-trips total.
+    """Async version of get_projects_with_tasks.
 
-    Concurrency cap: SEMAPHORE_LIMIT (15). Harvest's documented rate limit is
-    100 requests / 15s per account, with Cloudflare (in front of api.harvest
-    app.com) flat-out 429-blocking unbounded bursts. 2026-05-06 UAT proved
-    unbounded gather() trips the limit and silently empties the project
-    list — which then masquerades as a 'could not resolve' error downstream.
-    Capping concurrency keeps us inside the budget and trades ~200ms of
-    extra latency for reliability."""
+    Fast path (when access_token present): single GET to
+    /users/me/project_assignments. Returns the user's assigned projects
+    WITH their tasks in one response. ~500ms cold-cache cost for 100+
+    projects. This is the recommended path for OAuth-authenticated calls.
+
+    Legacy fallback: GET /projects + N parallel
+    /projects/{id}/task_assignments. Used when no access_token is
+    available (server-side admin paths) or when the assignments endpoint
+    fails. Concurrency capped at SEMAPHORE_LIMIT (15) to stay inside
+    Harvest's 100-req/15s budget and avoid Cloudflare 429s — UAT
+    2026-05-06 proved unbounded gather() trips the limit and silently
+    empties the project list.
+
+    Cache trade-off: cache is keyed globally, not per-user. For the
+    Thrive PoC (small team, mostly overlapping project sets) this is
+    fine; first user populates cache, subsequent users read it. For
+    larger-scale production, key by access_token hash to avoid leaking
+    user A's assignment list to user B."""
     global _project_cache, _cache_time
 
     if _project_cache and (time.time() - _cache_time) < CACHE_TTL:
@@ -150,6 +158,55 @@ async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
     fetch_t0 = time.time()
     headers = _headers(access_token)
     SEMAPHORE_LIMIT = 15
+
+    # Fast path: /users/me/project_assignments returns projects + tasks
+    # in one shot. Only available when we have an OAuth token (the PAT
+    # path also works but maps to whoever owns the PAT, which is usually
+    # not what we want for Approve resolution).
+    if access_token:
+        try:
+            async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+                resp = await client.get(
+                    f"{HARVEST_BASE}/users/me/project_assignments",
+                    params={"is_active": "true", "per_page": 200},
+                )
+            if resp.status_code == 200:
+                assignments = resp.json().get("project_assignments", [])
+                result = []
+                for a in assignments:
+                    proj = a.get("project") or {}
+                    if not proj.get("id") or not proj.get("name"):
+                        continue
+                    result.append({
+                        "project_id": proj["id"],
+                        "project_name": proj["name"],
+                        "client_name": (a.get("client") or {}).get("name") or proj["name"],
+                        "tasks": [
+                            {
+                                "task_id": (ta.get("task") or {}).get("id"),
+                                "task_name": (ta.get("task") or {}).get("name", ""),
+                            }
+                            for ta in (a.get("task_assignments") or [])
+                            if (ta.get("task") or {}).get("id")
+                        ],
+                    })
+                _project_cache = result
+                _cache_time = time.time()
+                total_ms = int((time.time() - fetch_t0) * 1000)
+                print(
+                    f"[harvest_api] fetched via /users/me/project_assignments: "
+                    f"{len(result)} projects in {total_ms}ms (1 round-trip)"
+                )
+                return result
+            print(
+                f"[harvest_api] /users/me/project_assignments returned "
+                f"{resp.status_code}, falling back to /projects + task_assignments"
+            )
+        except Exception as e:
+            print(
+                f"[harvest_api] /users/me/project_assignments error: {e}, "
+                "falling back to /projects + task_assignments"
+            )
 
     try:
         async with httpx.AsyncClient(timeout=15, headers=headers) as client:
@@ -247,10 +304,10 @@ def get_projects_with_tasks(access_token: str = None) -> List[Dict]:
     """Fetch all active projects with their task assignments from Harvest.
     Returns list of: {project_id, project_name, client_name, tasks: [{task_id, task_name}]}.
 
-    Performance: the per-project task_assignments calls are run in parallel
-    via a 10-thread pool. Drops cold-cache cost from ~7-10s (51 sequential
-    requests) to ~0.5-1s. Capped at 10 workers to stay polite to Harvest's
-    rate limit (100 req/15s per account)."""
+    Fast path (with OAuth token): single GET /users/me/project_assignments.
+    Legacy fallback: /projects + N parallel /projects/{id}/task_assignments
+    via 10-thread pool. The async sibling get_projects_with_tasks_async
+    has the same fast/legacy split — see its docstring for details."""
     global _project_cache, _cache_time
 
     if _project_cache and (time.time() - _cache_time) < CACHE_TTL:
@@ -264,6 +321,48 @@ def get_projects_with_tasks(access_token: str = None) -> List[Dict]:
         _project_cache = []
         _cache_time = time.time()
         return []
+
+    # Fast path: /users/me/project_assignments returns projects + tasks in 1 call
+    if access_token:
+        try:
+            resp = httpx.get(
+                f"{HARVEST_BASE}/users/me/project_assignments",
+                headers=_headers(access_token),
+                params={"is_active": "true", "per_page": 200},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                assignments = resp.json().get("project_assignments", [])
+                result = []
+                for a in assignments:
+                    proj = a.get("project") or {}
+                    if not proj.get("id") or not proj.get("name"):
+                        continue
+                    result.append({
+                        "project_id": proj["id"],
+                        "project_name": proj["name"],
+                        "client_name": (a.get("client") or {}).get("name") or proj["name"],
+                        "tasks": [
+                            {
+                                "task_id": (ta.get("task") or {}).get("id"),
+                                "task_name": (ta.get("task") or {}).get("name", ""),
+                            }
+                            for ta in (a.get("task_assignments") or [])
+                            if (ta.get("task") or {}).get("id")
+                        ],
+                    })
+                _project_cache = result
+                _cache_time = time.time()
+                return result
+            print(
+                f"[harvest_api] sync /users/me/project_assignments returned "
+                f"{resp.status_code}, falling back to /projects"
+            )
+        except Exception as e:
+            print(
+                f"[harvest_api] sync /users/me/project_assignments error: {e}, "
+                "falling back to /projects"
+            )
 
     try:
         resp = httpx.get(
