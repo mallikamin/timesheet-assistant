@@ -34,6 +34,7 @@ import rate_limit
 import sheets_sync
 import tasks
 import tasks_routes
+import time_utils
 import training_log
 import user_profiles
 from project_mapping import (
@@ -386,10 +387,39 @@ REFERENCE — self-consistency & data-trust rules (CRITICAL — production obser
 REFERENCE — edge cases:
 - All-day blocks ("worked on X today"): default 7.5 hours unless the user has logged other entries today; in that case ask "is that the rest of today, or in addition to what you've already logged?"
 - Multi-task days ("did emails, then a meeting, then drafted a proposal"): create one entry per task, ask for duration of each.
-- Future dates ("for tomorrow's pitch"): refuse politely — only log work that has already happened.
+- Future dates ("tomorrow", "next Monday", "12th May", scheduled annual leave): ALLOWED. Harvest accepts future spent_date and the leave + planned-work flow needs it. Confirm the resolved YYYY-MM-DD with the user before creating the draft, but never refuse a future date. Examples: "for Thursday's pitch" -> create draft for that Thursday; "Annual Leave next Monday" -> create draft on that Monday.
 - Past dates ("last Tuesday"): convert to absolute YYYY-MM-DD using today's date as reference, confirm date with the user before logging.
 - Negative durations / zero hours: refuse, ask for clarification.
 - Hours > 16 in a single entry: confirm before logging — likely a typo or a "this whole week" misphrasing.
+
+REFERENCE — internal Thrive admin / non-client work (CRITICAL — Miles couldn't find general admin / reporting codes / Thrive L&D):
+Many users log time against internal Thrive projects, NOT against a billable client. These projects start with "Thrive " in the catalog above. **Override the assigned-projects pruning rule for internal work** — every Thrive employee can log time against any "Thrive *" project even if it doesn't appear in their personal Assigned list. Do NOT hide internal projects with "you're not assigned to that".
+
+Phrase mapping (look for the matching "Thrive *" project in the catalog):
+- "general admin", "admin", "ops", "operations", "internal stuff" -> Thrive Operation FY26 (task: Reporting & WIPs, or another internal task on that project)
+- "emails", "inbox", "to-do list", "to do list", "inbox triage", "catch-up on emails" -> Thrive Operation FY26 / Reporting & WIPs OR the user's regular client retainer (ask which one if ambiguous)
+- "training", "L&D", "learning and development", "learning & development", "weekly planning", "team training", "peer support" -> Thrive Learning & Development FY26 (tasks: Weekly Planning, Agency WIPs, SLT WIPs, Local WIPs, Peer Support)
+- "month end", "month-end", "invoicing", "finance", "estimates", "budget", "tax", "payroll", "accounts payable", "accounts receivable", "Xero" -> Thrive Finance Operation FY26 (tasks: Systems & Process Improvement, Reporting & WIPs, Tax and Accounting, Payroll, Estimate & invoice, Accounts Receivables, Bills & Accounts Payable, Thrive Budget, Clients Budget)
+- "team meeting", "all hands", "all-in WIP", "agency WIP", "weekly WIP" -> Thrive L&D / Agency WIPs OR Thrive Operation FY26 / Reporting & WIPs (ask which one)
+- "culture", "social events", "Thrive O'Clock", "office support" -> Thrive Culture & Social FY26 (tasks: Thrive O'Clock, Social Events, Office Support)
+- "innovation", "digital champions", "Timesheet Assistant" (this app), "AI tooling" -> Thrive Innovation Project (tasks: Digital Champions, Innovation Project)
+- "annual leave", "sick leave", "carer leave", "unpaid leave", "time in lieu", "TIL", "funeral leave" -> Thrive Leave (full day = 7.5h; future dates ALLOWED)
+- "social content", "case studies", "social media post", "approvals" -> Thrive Social Media & Content FY26
+- "new business", "biz dev for Thrive", "existing growth for Diageo/LEGO/etc internal" -> Thrive New Business - Existing Growth FY26
+
+If the user names a Thrive internal project that isn't in the catalog above, do NOT make one up — say plainly "I can't see a 'Thrive X' project in the catalog. The closest matches are: A, B, C — which one fits?" and list the 3-5 nearest Thrive-prefixed projects from the catalog.
+
+REFERENCE — entry-management tools (list / delete / edit):
+You have tools to list, delete, and edit existing Harvest entries — use these instead of telling the user to log into Harvest directly:
+- "show me all entries", "show me last week", "what did I log" -> use list_entries with the right date range.
+- "delete that entry", "clear today", "remove the X entry" -> use list_entries first to find IDs, then delete_entry. ALWAYS confirm the specific entries before deleting more than one.
+- "edit X to be Y", "change X to Y", "actually that was 4 hours not 7" -> use edit_entry. Under the hood this delete+recreates in Harvest.
+NEVER tell a user "I can only create new entries — you'll need to log into Harvest directly" — that text is OUTDATED. Use the tools.
+
+REFERENCE — wording when entries are saved (CRITICAL — production observation: Michael read "Logged: 7.5 hours" as "in Harvest" but the entry was only a Draft):
+- After a ```ENTRY block is created, the entry lands in DRAFT state in our staging DB and Google Sheet. It does NOT push to Harvest until the user clicks Approve in the entries panel (or says "approve" in chat).
+- Phrase your confirmation accordingly. Good: "Drafted 0.75h on Finance / Reporting & WIPs for today — approve in the right panel to push to Harvest." Bad: "Done! Logged that to Harvest." — that creates the wrong expectation.
+- Bulk approvals: when the user says "approve all", you don't need to do anything; the right panel's Approve All button is the path. Just acknowledge.
 
 REFERENCE — PR/communications industry task taxonomy (use this when categorizing ambiguous mentions; this is what each task type usually involves so you can match a user's verbal description to a task name):
 - Retainer work: monthly committed hours for ongoing client support — daily check-ins, ad-hoc requests, content review, monitoring. Verbs the user might use: "checking in on", "responding to", "handling", "managing", "keeping on top of", "babysitting".
@@ -451,9 +481,14 @@ def build_system_prompt(
         Skipped entirely if both inputs are empty so we don't waste tokens.
     """
     projects_text = get_all_projects_for_prompt(harvest_access_token)
-    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
-        .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
-        .replace("{{today_day}}", date.today().strftime('%A')) \
+    # Cached block stays generic (UTC date) so it's identical for every user;
+    # the user's local "today" is injected as a runtime note in the uncached
+    # block below. That way the cache hit rate stays high and AU/NZ users
+    # still see correct dates.
+    server_today = date.today()
+    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", server_today.strftime('%A, %d/%m/%Y')) \
+        .replace("{{today_iso}}", server_today.strftime('%Y-%m-%d')) \
+        .replace("{{today_day}}", server_today.strftime('%A')) \
         .replace("{{projects_text}}", projects_text) \
         .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
 
@@ -466,6 +501,17 @@ def build_system_prompt(
         profile_text = user_profiles.render_profile_block(user_email)
         if profile_text:
             uncached_parts.append(profile_text)
+        # Per-user local-date note — overrides the cached block's UTC date so
+        # AU/NZ users get the right "today" reference. Critical: the model
+        # MUST treat this as authoritative over the cached block's date.
+        local_today = time_utils.today_local(_user_dialect(user_email))
+        uncached_parts.append(
+            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block): "
+            f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
+            "This is the user's local date in their timezone — when they say "
+            "'today', 'tomorrow', or 'yesterday', anchor those words to THIS "
+            "date, not to the cached block's date."
+        )
     if notes:
         uncached_parts.extend(n for n in notes if n)
 
@@ -484,9 +530,10 @@ async def build_system_prompt_async(
     fetch (51 task_assignments calls) doesn't block the event loop.
     Same return shape as build_system_prompt."""
     projects_text = await get_all_projects_for_prompt_async(harvest_access_token)
-    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", date.today().strftime('%A, %d/%m/%Y')) \
-        .replace("{{today_iso}}", date.today().strftime('%Y-%m-%d')) \
-        .replace("{{today_day}}", date.today().strftime('%A')) \
+    server_today = date.today()
+    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", server_today.strftime('%A, %d/%m/%Y')) \
+        .replace("{{today_iso}}", server_today.strftime('%Y-%m-%d')) \
+        .replace("{{today_day}}", server_today.strftime('%A')) \
         .replace("{{projects_text}}", projects_text) \
         .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
 
@@ -499,6 +546,14 @@ async def build_system_prompt_async(
         profile_text = user_profiles.render_profile_block(user_email)
         if profile_text:
             uncached_parts.append(profile_text)
+        local_today = time_utils.today_local(_user_dialect(user_email))
+        uncached_parts.append(
+            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block): "
+            f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
+            "This is the user's local date in their timezone — when they say "
+            "'today', 'tomorrow', or 'yesterday', anchor those words to THIS "
+            "date, not to the cached block's date."
+        )
     if notes:
         uncached_parts.extend(n for n in notes if n)
 
@@ -511,6 +566,49 @@ async def build_system_prompt_async(
 def get_current_user(request: Request) -> Optional[Dict]:
     """Get the logged-in user from session."""
     return request.session.get("user")
+
+
+def _user_dialect(user_email: Optional[str]) -> Optional[str]:
+    """Resolve the user's dialect (e.g. 'en-AU-Sydney') from their profile.
+    Returns None when no profile exists — callers fall through to AU default."""
+    if not user_email:
+        return None
+    try:
+        profile = user_profiles.get_profile(user_email)
+        return profile.get("dialect")
+    except Exception:
+        return None
+
+
+_SELECTED_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _selected_date_note(selected: str) -> str:
+    """Format the user's date-picker selection as a strong system note. Returns
+    empty string when the input doesn't look like YYYY-MM-DD so a malformed
+    value can never silently become 'today'."""
+    selected = (selected or "").strip()
+    if not _SELECTED_DATE_RE.match(selected):
+        return ""
+    try:
+        d = date.fromisoformat(selected)
+    except ValueError:
+        return ""
+    return (
+        "USER-SELECTED DATE (highest priority — overrides 'today/yesterday/tomorrow' "
+        f"phrases in the user's message): {d.strftime('%A, %d/%m/%Y')} ({d.isoformat()}). "
+        "Treat this as the authoritative date for any entry the user describes "
+        "in their next message UNLESS they explicitly state a different date in "
+        "the message itself. If their message already specifies a date, follow "
+        "the message's date — the picker is only the default, not a lock."
+    )
+
+
+def _today_local_iso(user_email: Optional[str] = None) -> str:
+    """Today in the user's local timezone as YYYY-MM-DD. Use this instead
+    of date.today().isoformat() for any spent_date defaulting — UTC on
+    Render means date.today() lies for AU/NZ users from late afternoon."""
+    return time_utils.today_iso_local(_user_dialect(user_email))
 
 
 def _build_today_summary_note(user_email: str, harvest_access_token: Optional[str]) -> Optional[str]:
@@ -530,7 +628,10 @@ def _build_today_summary_note(user_email: str, harvest_access_token: Optional[st
         hid = profile.get("harvest_user_id")
         if not hid:
             return None
-        entries = harvest_api.get_today_entries_cached(hid, harvest_access_token)
+        local_today = time_utils.today_iso_local(profile.get("dialect"))
+        entries = harvest_api.get_today_entries_cached(
+            hid, harvest_access_token, spent_date=local_today
+        )
         summary = harvest_api.format_today_summary(entries)
         return summary or None
     except Exception as e:
@@ -542,6 +643,10 @@ class ChatRequest(BaseModel):
     user: str
     message: str
     history: List[Dict] = []
+    # Optional YYYY-MM-DD from the chat-input date picker. When set, the AI
+    # treats this as the authoritative date for any entry the user describes
+    # in this message (overrides the user's local "today" anchor).
+    selected_date: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -549,8 +654,19 @@ class ChatResponse(BaseModel):
     entries_created: List[Dict] = []
 
 
-def save_entry_everywhere(user: str, entry_data: Dict, user_email: str = "") -> Dict:
-    """Save an entry as Draft to Supabase and Google Sheets. Harvest push happens on approval."""
+def save_entry_everywhere(
+    user: str,
+    entry_data: Dict,
+    user_email: str = "",
+    fallback_date: Optional[str] = None,
+) -> Dict:
+    """Save an entry as Draft to Supabase and Google Sheets. Harvest push happens on approval.
+
+    Date precedence: entry_data['date'] (AI-emitted) > fallback_date
+    (date-picker selection) > user's local today. The picker is the default
+    when the AI didn't pin a date, so a user who pre-set 12 May for an Annual
+    Leave entry actually gets 12 May rather than today."""
+    default_date = fallback_date or _today_local_iso(user_email)
     entry = harvest_mock.create_draft_entry(
         user=user,
         client=entry_data.get("client", "Unknown"),
@@ -559,7 +675,7 @@ def save_entry_everywhere(user: str, entry_data: Dict, user_email: str = "") -> 
         task=entry_data.get("task", "General"),
         hours=float(entry_data.get("hours", 0)),
         notes=entry_data.get("notes", ""),
-        entry_date=entry_data.get("date", date.today().isoformat()),
+        entry_date=entry_data.get("date", default_date),
         status=entry_data.get("status", "Draft"),
     )
     # Sync to Google Sheet (draft only — no Harvest push until approved)
@@ -683,13 +799,145 @@ TOOLS = [
             "required": [],
         },
     },
+    {
+        "name": "list_entries",
+        "description": (
+            "List the user's existing Harvest time entries for a given date range. Use this when the user asks "
+            "'show me my entries', 'what did I log last week', 'show me yesterday', or before deleting/editing "
+            "an entry so you can find the harvest_id to operate on. Returns each entry's harvest_id, "
+            "spent_date, project name, task name, hours, and notes. "
+            "Defaults to today if no dates given. Maximum 31-day range per call."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string",
+                    "description": "Start date in YYYY-MM-DD format. Defaults to today (user's local timezone).",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "End date in YYYY-MM-DD format (inclusive). Defaults to same as date_from.",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "delete_entry",
+        "description": (
+            "Delete a Harvest time entry by its harvest_id. Use this when the user explicitly asks to delete, "
+            "remove, or clear an entry. ALWAYS run list_entries first to confirm the harvest_id and "
+            "ALWAYS confirm with the user which specific entry will be deleted before calling this — "
+            "deletion is irreversible in Harvest's web UI for the user. For 'clear all today / clear week' "
+            "requests, list first, then state exactly which entries you'll delete and ask for confirmation, "
+            "then call delete_entry once per harvest_id."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "harvest_id": {
+                    "type": "integer",
+                    "description": "The Harvest time-entry id (from list_entries output).",
+                },
+            },
+            "required": ["harvest_id"],
+        },
+    },
+    {
+        "name": "edit_entry",
+        "description": (
+            "Edit a Harvest time entry's hours, notes, or spent_date in place. Use this for 'change 7h to 6h', "
+            "'fix the notes on entry X', 'move that to Tuesday'. ALWAYS list_entries first to confirm the "
+            "harvest_id. To CHANGE the project/task on an entry, do NOT use this — instead call delete_entry "
+            "for the old entry and emit a fresh ```ENTRY block for the new one (Harvest has issues with PATCH "
+            "across projects/tasks)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "harvest_id": {
+                    "type": "integer",
+                    "description": "The Harvest time-entry id (from list_entries output).",
+                },
+                "hours": {
+                    "type": "number",
+                    "description": "New hours value (optional).",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "New notes text (optional). Replaces existing notes.",
+                },
+                "spent_date": {
+                    "type": "string",
+                    "description": "New date in YYYY-MM-DD format (optional).",
+                },
+            },
+            "required": ["harvest_id"],
+        },
+    },
 ]
 
 MAX_TOOL_ITERATIONS = 5
 
+# Tool-name groupings — used to gate which tools the model is offered based on
+# what the user has connected. Keep these in sync with the TOOLS list above.
+_GOOGLE_TOOL_NAMES = {"scan_emails", "scan_calendar", "scan_drive"}
+_HARVEST_TOOL_NAMES = {"list_entries", "delete_entry", "edit_entry"}
 
-async def execute_tool(tool_name: str, tool_input: Dict, access_token: str) -> str:
-    """Execute a tool call and return the result string for Claude."""
+
+def _tools_for_user(has_google: bool, has_harvest: bool) -> Optional[List[Dict]]:
+    """Build the per-request tools list. Hides tools the user can't use so
+    the model doesn't try to call them and burn a tool-loop iteration on an
+    ERROR result."""
+    enabled: List[Dict] = []
+    for t in TOOLS:
+        name = t.get("name")
+        if name in _GOOGLE_TOOL_NAMES and has_google:
+            enabled.append(t)
+        elif name in _HARVEST_TOOL_NAMES and has_harvest:
+            enabled.append(t)
+    return enabled or None
+
+
+def _format_harvest_entries_for_tool(entries: List[Dict]) -> str:
+    """Render a list of Harvest entry dicts as a compact AI-readable summary.
+    Includes harvest_id so the model can target specific entries for delete/edit."""
+    if not entries:
+        return "No entries in that date range."
+    lines: List[str] = [f"Found {len(entries)} entries:"]
+    total = 0.0
+    for e in entries:
+        hrs = float(e.get("hours") or 0)
+        total += hrs
+        client = (e.get("client") or {}).get("name") or "?"
+        project = (e.get("project") or {}).get("name") or "?"
+        task = (e.get("task") or {}).get("name") or "?"
+        notes = (e.get("notes") or "").strip()
+        notes_preview = f' — "{notes[:80]}"' if notes else ""
+        lines.append(
+            f"- [harvest_id={e.get('id')}] {e.get('spent_date','?')} | "
+            f"{client} / {project} / {task} | {hrs}h{notes_preview}"
+        )
+    lines.append(f"Total: {total:.2f}h")
+    return "\n".join(lines)
+
+
+async def execute_tool(
+    tool_name: str,
+    tool_input: Dict,
+    access_token: str,
+    harvest_access_token: Optional[str] = None,
+    harvest_user_id: Optional[int] = None,
+    user_dialect: Optional[str] = None,
+) -> str:
+    """Execute a tool call and return the result string for Claude.
+
+    `access_token` is the Google OAuth token (for scan_*).
+    `harvest_access_token` + `harvest_user_id` are the Harvest context for
+    list_entries / delete_entry / edit_entry. When the Harvest context is
+    missing, those tools return an explicit error string the model can show
+    to the user."""
     try:
         if tool_name == "scan_emails":
             emails = gmail_sync.search_emails(
@@ -720,6 +968,53 @@ async def execute_tool(tool_name: str, tool_input: Dict, access_token: str) -> s
                 date_to=tool_input.get("date_to"),
             )
             return drive_sync.format_search_results_for_tool(files)
+
+        elif tool_name == "list_entries":
+            if not harvest_access_token or not harvest_user_id:
+                return "ERROR: Harvest is not connected for this user — ask them to click 'Connect Harvest' in the top banner."
+            local_today = time_utils.today_iso_local(user_dialect)
+            df = tool_input.get("date_from") or local_today
+            dt = tool_input.get("date_to") or df
+            entries = harvest_api.get_time_entries_range(
+                from_date=df,
+                to_date=dt,
+                user_id=harvest_user_id,
+                access_token=harvest_access_token,
+            )
+            return _format_harvest_entries_for_tool(entries)
+
+        elif tool_name == "delete_entry":
+            if not harvest_access_token:
+                return "ERROR: Harvest is not connected — ask the user to click 'Connect Harvest'."
+            hid = tool_input.get("harvest_id")
+            if not hid:
+                return "ERROR: harvest_id is required."
+            ok = harvest_api.delete_time_entry(int(hid), access_token=harvest_access_token)
+            if ok and harvest_user_id:
+                harvest_api.invalidate_today_cache(harvest_user_id)
+            return f"Deleted entry harvest_id={hid}: success={ok}"
+
+        elif tool_name == "edit_entry":
+            if not harvest_access_token:
+                return "ERROR: Harvest is not connected — ask the user to click 'Connect Harvest'."
+            hid = tool_input.get("harvest_id")
+            if not hid:
+                return "ERROR: harvest_id is required."
+            updated = harvest_api.patch_time_entry(
+                harvest_id=int(hid),
+                hours=tool_input.get("hours"),
+                notes=tool_input.get("notes"),
+                spent_date=tool_input.get("spent_date"),
+                access_token=harvest_access_token,
+            )
+            if updated and harvest_user_id:
+                harvest_api.invalidate_today_cache(harvest_user_id)
+            if not updated:
+                return f"ERROR: Could not edit entry {hid}. Check the id is valid and at least one field (hours/notes/spent_date) was provided."
+            return (
+                f"Edited entry harvest_id={hid}: spent_date={updated.get('spent_date')} "
+                f"hours={updated.get('hours')} notes={(updated.get('notes') or '')[:80]}"
+            )
 
         else:
             return f"Unknown tool: {tool_name}"
@@ -941,7 +1236,7 @@ async def home(request: Request):
             "request": request,
             "user": user,
             "users": PILOT_USERS,
-            "today": date.today().strftime("%A, %d/%m/%Y"),
+            "today": time_utils.today_local(profile.get("dialect")).strftime("%A, %d/%m/%Y"),
             # Hides the local-only Task Dashboard link on Render production —
             # without this guard the button rendered unconditionally and 404'd
             # on /dashboard for every pilot user (the planning routes only
@@ -1013,6 +1308,9 @@ async def chat(req: ChatRequest, request: Request):
             "If they try to log time, tell them to click 'Connect Harvest' first."
         )
 
+    if req.selected_date:
+        runtime_notes.append(_selected_date_note(req.selected_date))
+
     today_note = _build_today_summary_note(user.get("email", ""), harvest_access_token)
     if today_note:
         runtime_notes.append(today_note)
@@ -1023,8 +1321,10 @@ async def chat(req: ChatRequest, request: Request):
         notes=runtime_notes,
     )
 
-    # Only offer tools if Google access is available
-    tools_param = TOOLS if has_google_access else None
+    tools_param = _tools_for_user(has_google_access, bool(harvest_access_token))
+    profile_for_tools = user_profiles.get_profile(user.get("email", ""))
+    user_dialect_for_tools = profile_for_tools.get("dialect")
+    harvest_user_id_for_tools = profile_for_tools.get("harvest_user_id")
 
     # === AGENTIC LOOP ===
     iterations = 0
@@ -1095,7 +1395,8 @@ async def chat(req: ChatRequest, request: Request):
                         "input": block.input,
                     })
 
-                    if not has_google_access:
+                    is_google = block.name in _GOOGLE_TOOL_NAMES
+                    if is_google and not has_google_access:
                         result_text = (
                             "ERROR: Google access is no longer available. "
                             "Ask the user to sign out and sign back in."
@@ -1105,6 +1406,9 @@ async def chat(req: ChatRequest, request: Request):
                             tool_name=block.name,
                             tool_input=block.input,
                             access_token=access_token,
+                            harvest_access_token=harvest_access_token,
+                            harvest_user_id=harvest_user_id_for_tools,
+                            user_dialect=user_dialect_for_tools,
                         )
 
                     tool_results.append({
@@ -1147,7 +1451,12 @@ async def chat(req: ChatRequest, request: Request):
     # Save entries to Supabase + Sheets + Harvest
     created_entries = []
     for entry_data in entries_data:
-        entry = save_entry_everywhere(req.user, entry_data, user_email=user.get("email", ""))
+        entry = save_entry_everywhere(
+            req.user,
+            entry_data,
+            user_email=user.get("email", ""),
+            fallback_date=req.selected_date,
+        )
         created_entries.append(entry)
 
     # Capture this round for fine-tuning + analytics. Stash the interaction id on
@@ -1290,6 +1599,9 @@ async def chat_stream(req: ChatRequest, request: Request):
                 "If they try to log time, tell them to click 'Connect Harvest' first."
             )
 
+        if req.selected_date:
+            runtime_notes.append(_selected_date_note(req.selected_date))
+
         today_note = _build_today_summary_note(user.get("email", ""), harvest_access_token)
         if today_note:
             runtime_notes.append(today_note)
@@ -1304,7 +1616,10 @@ async def chat_stream(req: ChatRequest, request: Request):
             notes=runtime_notes,
         )
         prompt_build_ms = int((time.time() - prompt_t0) * 1000)
-        tools_param = TOOLS if has_google_access else None
+        tools_param = _tools_for_user(has_google_access, bool(harvest_access_token))
+        profile_for_tools = user_profiles.get_profile(user.get("email", ""))
+        user_dialect_for_tools = profile_for_tools.get("dialect")
+        harvest_user_id_for_tools = profile_for_tools.get("harvest_user_id")
 
         yield _sse({"type": "status", "message": "Thinking..."})
         print(
@@ -1370,13 +1685,17 @@ async def chat_stream(req: ChatRequest, request: Request):
                                 "name": block.name,
                                 "input": block.input,
                             })
-                            if not access_token2:
+                            is_google_tool = block.name in _GOOGLE_TOOL_NAMES
+                            if is_google_tool and not access_token2:
                                 result_text = "ERROR: Google access is no longer available."
                             else:
                                 result_text = await execute_tool(
                                     tool_name=block.name,
                                     tool_input=block.input,
-                                    access_token=access_token2,
+                                    access_token=access_token2 or "",
+                                    harvest_access_token=harvest_access_token,
+                                    harvest_user_id=harvest_user_id_for_tools,
+                                    user_dialect=user_dialect_for_tools,
                                 )
                             tool_results.append({
                                 "type": "tool_result",
@@ -1400,7 +1719,10 @@ async def chat_stream(req: ChatRequest, request: Request):
             created_entries = []
             for entry_data in entries_data:
                 entry = save_entry_everywhere(
-                    req.user, entry_data, user_email=user.get("email", "")
+                    req.user,
+                    entry_data,
+                    user_email=user.get("email", ""),
+                    fallback_date=req.selected_date,
                 )
                 created_entries.append(entry)
 
@@ -1494,6 +1816,7 @@ async def approve_all_entries(request: Request):
     body = await request.json()
     user_name = body.get("user", user.get("name", ""))
     user_email = user.get("email", "")
+    local_today_iso = _today_local_iso(user_email)
 
     entries = harvest_mock.get_entries(user=user_name)
     drafts = [e for e in entries if e.get("status") in ("Draft", "Needs Review")]
@@ -1504,6 +1827,7 @@ async def approve_all_entries(request: Request):
 
         # Try direct IDs from project_code first (format: "projectId-taskId")
         harvest_entry = None
+        push_error: Optional[str] = None
         project_code = entry.get("project_code", "")
         if project_code and "-" in project_code:
             parts = project_code.split("-", 1)
@@ -1512,27 +1836,33 @@ async def approve_all_entries(request: Request):
                 harvest_entry = harvest_api.create_time_entry(
                     project_id=pid,
                     task_id=tid,
-                    spent_date=entry.get("date", date.today().isoformat()),
+                    spent_date=entry.get("date", local_today_iso),
                     hours=float(entry.get("hours", 0)),
                     notes=entry.get("notes", ""),
                     user_id=harvest_user_id,
                     access_token=harvest_access_token,
                     task_name=entry.get("project_name", entry.get("task", "")),
                 )
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                push_error = f"bad project_code format ({e})"
 
         # Fallback to name resolution
         if not harvest_entry:
             harvest_entry = harvest_api.push_entry(
                 client_name=entry.get("client", ""),
                 task_name=entry.get("project_name", entry.get("task", "")),
-                spent_date=entry.get("date", date.today().isoformat()),
+                spent_date=entry.get("date", local_today_iso),
                 hours=float(entry.get("hours", 0)),
                 notes=entry.get("notes", ""),
                 user_id=harvest_user_id,
                 access_token=harvest_access_token,
             )
+            if not harvest_entry and not push_error:
+                push_error = (
+                    f"Harvest could not resolve project '{entry.get('client','')}' "
+                    f"+ task '{entry.get('project_name', entry.get('task',''))}' "
+                    "— project may be inactive or task name doesn't match."
+                )
 
         if harvest_entry:
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
@@ -1555,7 +1885,15 @@ async def approve_all_entries(request: Request):
             )
             results.append({"id": entry["id"], "approved": True})
         else:
-            results.append({"id": entry["id"], "approved": False})
+            # Surface the underlying reason so the frontend / user can see
+            # why the push failed instead of an opaque "approved: false".
+            results.append({
+                "id": entry["id"],
+                "approved": False,
+                "error": push_error or "unknown Harvest push failure",
+                "client": entry.get("client", ""),
+                "task": entry.get("project_name", entry.get("task", "")),
+            })
 
     return {"success": True, "results": results}
 
@@ -1681,9 +2019,11 @@ async def approve_entry(entry_id: str, request: Request):
     print(f"Approve entry {entry_id}: client='{entry.get('client')}' project_code='{entry.get('project_code')}' task='{entry.get('project_name', entry.get('task'))}'")
     user_email = user.get("email", "")
     harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
+    local_today_iso = _today_local_iso(user_email)
 
     # Try direct IDs from project_code first (format: "projectId-taskId")
     harvest_entry = None
+    push_error: Optional[str] = None
     project_code = entry.get("project_code", "")
     if project_code and "-" in project_code:
         parts = project_code.split("-", 1)
@@ -1692,30 +2032,41 @@ async def approve_entry(entry_id: str, request: Request):
             harvest_entry = harvest_api.create_time_entry(
                 project_id=pid,
                 task_id=tid,
-                spent_date=entry.get("date", date.today().isoformat()),
+                spent_date=entry.get("date", local_today_iso),
                 hours=float(entry.get("hours", 0)),
                 notes=entry.get("notes", ""),
                 user_id=harvest_user_id,
                 access_token=harvest_access_token,
                 task_name=entry.get("project_name", entry.get("task", "")),
             )
-        except (ValueError, TypeError):
-            pass  # Not numeric IDs, fall through to name resolution
+        except (ValueError, TypeError) as e:
+            push_error = f"bad project_code format ({e})"
 
     # Fallback to name resolution
     if not harvest_entry:
         harvest_entry = harvest_api.push_entry(
             client_name=entry.get("client", ""),
             task_name=entry.get("project_name", entry.get("task", "")),
-            spent_date=entry.get("date", date.today().isoformat()),
+            spent_date=entry.get("date", local_today_iso),
             hours=float(entry.get("hours", 0)),
             notes=entry.get("notes", ""),
             user_id=harvest_user_id,
             access_token=harvest_access_token,
         )
+        if not harvest_entry and not push_error:
+            push_error = (
+                f"Harvest could not resolve project '{entry.get('client','')}' "
+                f"+ task '{entry.get('project_name', entry.get('task',''))}'. "
+                "Verify the project is active and the task name matches Harvest."
+            )
 
     if not harvest_entry:
-        return {"success": False, "error": "Failed to push to Harvest"}
+        return {
+            "success": False,
+            "error": push_error or "Failed to push to Harvest",
+            "client": entry.get("client", ""),
+            "task": entry.get("project_name", entry.get("task", "")),
+        }
 
     # Update Supabase
     harvest_mock.update_entry(entry_id, status="Approved", harvest_id=harvest_entry["id"])
@@ -1764,7 +2115,7 @@ async def get_calendar_events(request: Request, target_date: str = None):
     request.session["google_token"] = valid_token
 
     events = calendar_sync.get_events(valid_token["access_token"], target_date)
-    return {"events": events, "date": target_date or date.today().isoformat()}
+    return {"events": events, "date": target_date or _today_local_iso(user.get("email", ""))}
 
 
 @app.post("/api/calendar/suggest")
@@ -2055,7 +2406,7 @@ async def calendar_weekly_summary(request: Request, weeks: int = 1):
         return {"error": "token_expired", "days": []}
     request.session["google_token"] = valid_token
 
-    today = date.today()
+    today = time_utils.today_local(_user_dialect(user.get("email", "")))
     date_from = (today - timedelta(days=weeks * 7 - 1)).isoformat()
     date_to = today.isoformat()
 
@@ -2430,7 +2781,10 @@ async def today_summary(request: Request):
         return {"authenticated": True, "connected": True, "entries": [], "total_hours": 0.0}
 
     try:
-        entries = harvest_api.get_today_entries_cached(hid, access_token)
+        local_today = time_utils.today_iso_local(profile.get("dialect"))
+        entries = harvest_api.get_today_entries_cached(
+            hid, access_token, spent_date=local_today
+        )
         compact = []
         total = 0.0
         for e in entries:
@@ -2455,31 +2809,46 @@ async def today_summary(request: Request):
 
 
 @app.get("/api/chat/recent")
-async def chat_recent(request: Request, limit: int = 10):
-    """Return the last N chat messages from today so the page can resume an
-    abandoned conversation. Critical when the user closes the tab mid-flow
-    (the AI asked 'which project for Sydney WIP?' and the user comes back
-    later without context — without this, they re-ask from scratch)."""
+async def chat_recent(request: Request, limit: int = 10, days: int = 1):
+    """Return the last N chat messages from the last `days` days so the page
+    can resume an abandoned conversation.
+
+    Hugh asked for multi-day resume — he'd progressed in a chat last week and
+    couldn't see it. Default stays 1 day so we don't dump a week of history
+    into the model on every page load (token cost + cache invalidation), but
+    callers can request up to 14 days.
+
+    The day cutoff is computed in the user's local timezone, so an AU user
+    who opens the app at 9am Wednesday sees Wednesday's history (today) —
+    not the prior calendar day in UTC."""
     user = get_current_user(request)
     if not user:
         return {"authenticated": False, "messages": []}
     user_name = user.get("name", "")
     try:
-        msgs = harvest_mock.get_chat_history(user_name, limit=max(1, min(limit, 50))) or []
+        msgs = harvest_mock.get_chat_history(user_name, limit=max(1, min(limit, 200))) or []
     except Exception as e:
         print(f"[WARN] /api/chat/recent failed: {e}")
         return {"authenticated": True, "messages": []}
 
-    # Filter to today only — we don't want to feed the AI a week of stale
-    # context (cache invalidation + token cost). The cutoff is today UTC,
-    # which roughly aligns with most users' local 'today' for AU/NZ.
-    today_iso = date.today().isoformat()
-    today_msgs = []
+    days = max(1, min(days, 14))
+    user_email = user.get("email", "")
+    cutoff = time_utils.today_local(_user_dialect(user_email)) - timedelta(days=days - 1)
+    cutoff_iso = cutoff.isoformat()
+    keep: List[Dict] = []
     for m in msgs:
         ts = (m.get("created_at") or m.get("ts") or "")
-        if ts.startswith(today_iso):
-            today_msgs.append({"role": m.get("role", ""), "content": m.get("content", "")})
-    return {"authenticated": True, "messages": today_msgs[-max(1, min(limit, 50)):]}
+        # Stored timestamps are UTC ISO; for the cutoff we just need the
+        # date prefix to be >= cutoff in the user's local zone. UTC date
+        # may be ahead of local date by ~1 day at the boundary, but the
+        # tail-cap and the day-window already absorb that fuzz.
+        if ts and ts[:10] >= cutoff_iso:
+            keep.append({"role": m.get("role", ""), "content": m.get("content", "")})
+    return {
+        "authenticated": True,
+        "messages": keep[-max(1, min(limit, 200)):],
+        "days": days,
+    }
 
 
 # --- Task Management Board (LOCAL demo — gated behind LOCAL_DEMO_ONLY=1) ---

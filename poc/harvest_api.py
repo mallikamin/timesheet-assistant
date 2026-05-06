@@ -426,6 +426,51 @@ def create_time_entry(
         return None
 
 
+def patch_time_entry(
+    harvest_id: int,
+    hours: Optional[float] = None,
+    notes: Optional[str] = None,
+    spent_date: Optional[str] = None,
+    access_token: str = None,
+) -> Optional[Dict]:
+    """PATCH a time entry's hours, notes, or spent_date in place.
+
+    Project/task changes are NOT supported here (use delete_time_entry + a
+    fresh create_time_entry for that — Harvest's PATCH semantics around
+    project_id/task_id can silently no-op when the new task isn't assigned
+    to the user, which we already handle in create_time_entry's retry).
+
+    Returns the updated entry dict or None on failure.
+    """
+    if not is_configured() and not access_token:
+        return None
+
+    payload: Dict = {}
+    if hours is not None:
+        payload["hours"] = hours
+    if notes is not None:
+        payload["notes"] = notes
+    if spent_date is not None:
+        payload["spent_date"] = spent_date
+    if not payload:
+        return None  # no-op; treat as failure so caller can show "nothing changed"
+
+    try:
+        resp = httpx.patch(
+            f"{HARVEST_BASE}/time_entries/{harvest_id}",
+            headers=_headers(access_token),
+            json=payload,
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            return resp.json()
+        print(f"Harvest patch error: {resp.status_code} {resp.text[:200]}")
+        return None
+    except Exception as e:
+        print(f"Harvest patch_time_entry error: {e}")
+        return None
+
+
 def delete_time_entry(harvest_id: int, access_token: str = None) -> bool:
     """Delete a time entry from Harvest."""
     if not is_configured() and not access_token:
@@ -471,6 +516,11 @@ def get_time_entries(spent_date: str = None, user_id: int = None, access_token: 
 
 
 def _today_iso() -> str:
+    """UTC today fallback. Callers SHOULD pass an explicit spent_date in the
+    user's local timezone — this is only a last-ditch default. Sweep for any
+    leftover callsites: the helper exists for backward compatibility but is
+    timezone-naive (anchored on the server's UTC) and will be off by one day
+    for AU/NZ users in their evening."""
     from datetime import date as _date
     return _date.today().isoformat()
 
