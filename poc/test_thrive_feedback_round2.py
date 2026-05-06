@@ -877,31 +877,53 @@ class TodayClampTests(unittest.TestCase):
     Real production observation 2026-05-07: in a 34-message resumed chat
     Malik typed "1h general admin today"; the AI emitted an ENTRY block
     with date=2026-05-08 (Friday) instead of 2026-05-07 (Thursday). The
-    clamp fixes that deterministically before the entry is saved."""
+    clamp fixes that deterministically before the entry is saved.
+
+    Tests pin server_today to 2026-05-07 via patching _today_local_iso so
+    the suite is independent of the calendar date when CI runs."""
+
+    SERVER_TODAY = "2026-05-07"
 
     def setUp(self):
-        from app import _clamp_entry_date_to_today
-        self.clamp = _clamp_entry_date_to_today
+        import app as app_mod
+        self.app_mod = app_mod
+        # Pin server-today so tests don't depend on the calendar.
+        self._patch = patch.object(app_mod, "_today_local_iso", return_value=self.SERVER_TODAY)
+        self._patch.start()
+        self.clamp = app_mod._clamp_entry_date_to_today
+
+    def tearDown(self):
+        self._patch.stop()
 
     def test_clamps_when_user_says_today_but_model_drifted(self):
-        # User said "today" → entry MUST be 2026-05-07; AI gave 2026-05-08
+        # User said "today" → entry MUST be server today; AI gave 2026-05-08
         clamped, reason = self.clamp(
             tool_date="2026-05-08",
             user_message="1h general admin today",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
-        self.assertEqual(clamped, "2026-05-07")
+        self.assertEqual(clamped, self.SERVER_TODAY)
         self.assertIsNotNone(reason)
         self.assertIn("today", reason)
 
-    def test_no_clamp_when_user_explicitly_named_a_weekday(self):
-        # "tomorrow finance" — user wants tomorrow, not today
+    def test_clamp_ignores_picker_drift_when_user_said_today(self):
+        # Picker is on a future date but user said 'today' — anchor wins.
+        clamped, reason = self.clamp(
+            tool_date="2026-05-08",
+            user_message="1h general admin today",
+            user_email=None,
+            selected_date="2026-05-08",
+        )
+        self.assertEqual(clamped, self.SERVER_TODAY)
+        self.assertIsNotNone(reason)
+
+    def test_no_clamp_when_user_explicitly_named_tomorrow(self):
         clamped, reason = self.clamp(
             tool_date="2026-05-08",
             user_message="tomorrow finance month-end work",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
         self.assertEqual(clamped, "2026-05-08")
         self.assertIsNone(reason)
@@ -911,20 +933,20 @@ class TodayClampTests(unittest.TestCase):
             tool_date="2026-05-12",
             user_message="annual leave on 12 may",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
         self.assertEqual(clamped, "2026-05-12")
         self.assertIsNone(reason)
 
     def test_no_clamp_when_today_aligns(self):
-        # Model emitted today as expected — no override.
+        # Model emitted server today as expected — no override.
         clamped, reason = self.clamp(
-            tool_date="2026-05-07",
+            tool_date=self.SERVER_TODAY,
             user_message="1h general admin today",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
-        self.assertEqual(clamped, "2026-05-07")
+        self.assertEqual(clamped, self.SERVER_TODAY)
         self.assertIsNone(reason)
 
     def test_no_clamp_when_no_today_keyword(self):
@@ -933,7 +955,7 @@ class TodayClampTests(unittest.TestCase):
             tool_date="2026-05-08",
             user_message="2h finance",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
         self.assertEqual(clamped, "2026-05-08")
         self.assertIsNone(reason)
@@ -944,9 +966,9 @@ class TodayClampTests(unittest.TestCase):
             tool_date="2026-05-08",
             user_message="30 min on emails this morning",
             user_email=None,
-            selected_date="2026-05-07",
+            selected_date=None,
         )
-        self.assertEqual(clamped, "2026-05-07")
+        self.assertEqual(clamped, self.SERVER_TODAY)
         self.assertIsNotNone(reason)
 
 

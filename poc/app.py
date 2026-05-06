@@ -72,6 +72,11 @@ LOCAL_DEMO_ONLY = os.getenv("LOCAL_DEMO_ONLY", "").strip() == "1"
 # Process boot timestamp — used by /health to report uptime.
 _BOOT_TS = time.time()
 
+# Build marker. Bump per substantive code change so we can verify the live
+# deploy matches what we expect (badge in top bar + /health "build.marker").
+# Format: short-slug-DATE-letter (letter increments within the same day).
+BUILD_MARKER = "clamp-debug-2026-05-07d"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1101,6 +1106,20 @@ def _format_harvest_entries_for_tool(entries: List[Dict]) -> str:
 
 _TODAY_KEYWORDS_RE = re.compile(r"\b(today|tonight|right now|just now|this morning|this afternoon|this evening|just did|just finished|currently)\b", re.IGNORECASE)
 
+# Used to detect the user EXPLICITLY anchoring to a date other than today.
+# When this matches, the clamp stands down — the user genuinely meant a
+# different day. We deliberately match conservative phrasings only — "did
+# Thursday's pitch" is an explicit anchor, "Thursday" alone is not.
+_COMPETING_ANCHOR_RE = re.compile(
+    r"\b(yesterday|tomorrow"
+    r"|last (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"|next (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"|on (mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?"
+    r"|\d{1,2}[ /-](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
+    r"|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[ /-]\d{1,2})\b",
+    re.IGNORECASE,
+)
+
 
 def _clamp_entry_date_to_today(
     tool_date: str,
@@ -1109,40 +1128,38 @@ def _clamp_entry_date_to_today(
     selected_date: Optional[str],
 ) -> Tuple[str, Optional[str]]:
     """If the user message clearly said 'today' but the model emitted a
-    different date for the entry, override to the user's local today and
-    return the override reason for logging.
+    different date for the entry, override to the user's PROFILE-tz today
+    and return the override reason for logging.
 
     Why this exists: in long resumed chats the model drifts on what 'today'
     means (Malik observed an entry for 'today' landing on Friday 8 May when
     AU local was Thursday 7 May). The system prompt clamps strongly, but
     a deterministic backend guard for the most common phrasing closes the
-    gap completely. We do NOT clamp when the user mentioned a specific
-    weekday or date — that's intentional drift, not an error."""
+    gap completely.
+
+    Important: when the user said 'today' we anchor to server-side
+    today_local(profile_dialect), NOT to selected_date. If a stale picker
+    or a UAT scenario put the picker on a future date, the user's spoken
+    'today' should still mean today — not what the picker drifted to.
+    selected_date is the right anchor only when the user did NOT say
+    'today' (handled by save_entry_everywhere's fallback_date precedence,
+    not here)."""
     if not tool_date or not user_message:
         return tool_date, None
     if not _TODAY_KEYWORDS_RE.search(user_message):
         return tool_date, None
-    # Don't override if the user ALSO mentioned a competing time anchor —
-    # 'this morning' + 'last Friday' is ambiguous, leave it to the model.
-    competing = re.search(
-        r"\b(yesterday|tomorrow|last (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-        r"next (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
-        r"(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?|"
-        r"\d{1,2}[ /-](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))\b",
-        user_message,
-        re.IGNORECASE,
-    )
-    if competing:
+    if _COMPETING_ANCHOR_RE.search(user_message):
         return tool_date, None
-    expected_today = selected_date or _today_local_iso(user_email)
-    if tool_date == expected_today:
+    server_today = _today_local_iso(user_email)
+    if tool_date == server_today:
         return tool_date, None
     reason = (
-        f"clamped tool_date={tool_date} to today={expected_today} — user said "
+        f"clamped tool_date={tool_date} to today={server_today} — user said "
         f"'today' (keyword: '{_TODAY_KEYWORDS_RE.search(user_message).group(0)}') "
-        f"but model emitted a different date (likely chat-history drift)"
+        f"but model emitted a different date (chat-history drift). "
+        f"selected_date={selected_date!r} ignored because user explicitly said 'today'."
     )
-    return expected_today, reason
+    return server_today, reason
 
 
 async def execute_tool(
@@ -1361,7 +1378,7 @@ async def health(request: Request):
             # Bumped per code change so we can confirm a deploy went live —
             # if /health returns the old marker, Render hasn't reloaded yet
             # and any UAT result on the chat path is from stale code.
-            "marker": "today-clamp-debug-2026-05-07c",
+            "marker": BUILD_MARKER,
         },
     }
 
@@ -1687,6 +1704,7 @@ async def home(request: Request):
             # because his browser-local picker said Thursday while the
             # backend resolved "today" to Friday in AU.
             "today_iso": today_local_date.isoformat(),
+            "build_marker": BUILD_MARKER,
             # Hides the local-only Task Dashboard link on Render production —
             # without this guard the button rendered unconditionally and 404'd
             # on /dashboard for every pilot user (the planning routes only

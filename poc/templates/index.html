@@ -809,6 +809,11 @@
     </h1>
     <div class="top-bar-right">
         <div class="date-display">{{ today }}</div>
+        <span title="Build marker — changes per deploy so we can verify the live build matches the latest commit"
+              style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 10px; color: #b0bec5; background: rgba(255,255,255,0.06);
+                     padding: 3px 7px; border-radius: 4px; letter-spacing: 0.02em;
+                     border: 1px solid rgba(255,255,255,0.12);">{{ build_marker }}</span>
         <div class="user-info">
             {% if user.picture %}
             <img class="user-avatar" src="{{ user.picture }}" alt="">
