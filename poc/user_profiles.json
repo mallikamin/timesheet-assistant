@@ -1,11 +1,11 @@
 {
-  "hugh@thrivepr.co.nz": {
-    "_notes_for_malik": "Replace email with Hugh's real Thrive address (likely .co.nz domain if Auckland-based). NZ English dialect. Common Kiwi slang preloaded \u2014 refine after stress test starts.",
+  "hugh.preston@thrivepr.com.au": {
+    "_notes_for_malik": "Hugh Preston — Consultant Tier 2, Thrive Sydney. Verified from Harvest people export 2026-05-06. AU dialect (Sydney), NOT NZ as previously assumed.",
     "assigned_project_codes": [],
     "common_tasks": [],
-    "dialect": "en-NZ-Auckland",
+    "dialect": "en-AU-Sydney",
     "display_name": "Hugh",
-    "email": "hugh@thrivepr.co.nz",
+    "email": "hugh.preston@thrivepr.com.au",
     "harvest_user_id": null,
     "name_aliases": {},
     "preferred_response_style": "terse",
@@ -13,21 +13,20 @@
     "recent_entries_summary": [],
     "updated_at": null,
     "vocabulary_hints": [
-      "sweet as",
-      "chur",
-      "jandals",
-      "yeah nah",
-      "stoked",
-      "she'll be right"
+      "arvo",
+      "no worries",
+      "no dramas",
+      "heaps",
+      "keen"
     ]
   },
-  "michael@thrivepr.com.au": {
-    "_notes_for_malik": "Replace email with Michael's real Thrive address. Default to verbose style; if he prefers terse responses, change preferred_response_style. Auto-bootstrap will fill projects on Harvest OAuth.",
+  "michael.adamson@thrivepr.com.au": {
+    "_notes_for_malik": "Michael Adamson — Thrive National. Verified from Harvest people export 2026-05-06 (NOT Michael Banks, who is Senior Consultant Tier 1 Melbourne). Auto-bootstrap will fill projects on Harvest OAuth.",
     "assigned_project_codes": [],
     "common_tasks": [],
-    "dialect": "en-AU-Brisbane",
+    "dialect": "en-AU-Sydney",
     "display_name": "Michael",
-    "email": "michael@thrivepr.com.au",
+    "email": "michael.adamson@thrivepr.com.au",
     "harvest_user_id": null,
     "name_aliases": {},
     "preferred_response_style": "verbose",
@@ -41,13 +40,13 @@
       "no worries"
     ]
   },
-  "miles@thrivepr.com.au": {
-    "_notes_for_malik": "Replace email with Miles's real Thrive address. Auto-bootstrap will fill assigned_project_codes + harvest_user_id when he completes Harvest OAuth. Update vocabulary_hints + dialect after observing his first few sessions.",
+  "miles.alexander@thrivepr.com.au": {
+    "_notes_for_malik": "Miles Alexander — Senior Consultant Tier 3, Thrive Sydney. Verified from Harvest people export 2026-05-06. Auto-bootstrap will fill assigned_project_codes + harvest_user_id when he completes Harvest OAuth.",
     "assigned_project_codes": [],
     "common_tasks": [],
     "dialect": "en-AU-Sydney",
     "display_name": "Miles",
-    "email": "miles@thrivepr.com.au",
+    "email": "miles.alexander@thrivepr.com.au",
     "harvest_user_id": null,
     "name_aliases": {},
     "preferred_response_style": "terse",
@@ -62,5 +61,19 @@
       "no dramas",
       "fair dinkum"
     ]
+  },
+  "u@example.com": {
+    "assigned_project_codes": [],
+    "common_tasks": [],
+    "dialect": "en-AU-Sydney",
+    "display_name": "",
+    "email": "u@example.com",
+    "harvest_user_id": null,
+    "name_aliases": {},
+    "preferred_response_style": "terse",
+    "recent_corrections": [],
+    "recent_entries_summary": [],
+    "updated_at": "2026-05-06T09:49:38.980561Z",
+    "vocabulary_hints": []
   }
 }

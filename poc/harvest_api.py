@@ -297,29 +297,99 @@ def get_projects_with_tasks(access_token: str = None) -> List[Dict]:
 def resolve_ids(project_name: str, task_name: str, access_token: str = None) -> Optional[Dict]:
     """Resolve project/task names to Harvest IDs.
     Returns {project_id, task_id} or None if not found.
-    """
-    projects = get_projects_with_tasks(access_token)
 
-    for p in projects:
-        # Match project by name (case-insensitive)
-        if p["project_name"].lower() == project_name.lower() or \
-           p["client_name"].lower() == project_name.lower():
-            # Find matching task
-            for t in p["tasks"]:
-                if t["task_name"].lower() == task_name.lower():
-                    return {
-                        "project_id": p["project_id"],
-                        "task_id": t["task_id"],
-                    }
-            # If no exact task match, try partial
-            for t in p["tasks"]:
-                if task_name.lower() in t["task_name"].lower() or \
-                   t["task_name"].lower() in task_name.lower():
-                    return {
-                        "project_id": p["project_id"],
-                        "task_id": t["task_id"],
-                    }
-    return None
+    Match tiers (try in order, return first match):
+      1. Exact project_name OR client_name match → exact task_name match
+      2. Exact project_name OR client_name match → substring task_name match
+      3. Substring project_name OR client_name match → exact task_name match
+      4. Substring project_name OR client_name match → substring task_name match
+
+    The substring tiers exist because the AI may generate canonical short
+    names ("Thrive Leave") that map to FY-suffixed Harvest projects
+    ("Thrive Leave FY26"), and similarly task names ("Annual Leave" vs the
+    actual "Leave - Annual Leave"). Case-insensitive throughout.
+    """
+    out, _candidates = _resolve_with_candidates(project_name, task_name, access_token)
+    return out
+
+
+def _resolve_with_candidates(
+    project_name: str, task_name: str, access_token: str = None
+) -> tuple:
+    """Internal: returns (resolution_or_None, candidates).
+
+    `candidates` is a list of up to 5 (project_name, client_name, top_task_names)
+    tuples for the closest projects we considered, used to build
+    actionable error messages."""
+    projects = get_projects_with_tasks(access_token)
+    if not projects:
+        return None, []
+    pn = (project_name or "").strip().lower()
+    tn = (task_name or "").strip().lower()
+    if not pn:
+        return None, []
+
+    # Tier 1 + 2: exact project match
+    exact_proj = [
+        p for p in projects
+        if p["project_name"].lower() == pn or p["client_name"].lower() == pn
+    ]
+    for p in exact_proj:
+        for t in p["tasks"]:
+            if t["task_name"].lower() == tn:
+                return {"project_id": p["project_id"], "task_id": t["task_id"]}, []
+    for p in exact_proj:
+        for t in p["tasks"]:
+            tname = t["task_name"].lower()
+            if tn and (tn in tname or tname in tn):
+                return {"project_id": p["project_id"], "task_id": t["task_id"]}, []
+
+    # Tier 3 + 4: substring project match
+    substr_proj = [
+        p for p in projects
+        if p not in exact_proj
+        and (pn in p["project_name"].lower() or pn in p["client_name"].lower())
+    ]
+    for p in substr_proj:
+        for t in p["tasks"]:
+            if t["task_name"].lower() == tn:
+                return {"project_id": p["project_id"], "task_id": t["task_id"]}, []
+    for p in substr_proj:
+        for t in p["tasks"]:
+            tname = t["task_name"].lower()
+            if tn and (tn in tname or tname in tn):
+                return {"project_id": p["project_id"], "task_id": t["task_id"]}, []
+
+    # No match — build candidate list for actionable error message
+    candidate_pool = exact_proj + substr_proj
+    if not candidate_pool:
+        # Last resort: substring on project_name only, looser
+        candidate_pool = [
+            p for p in projects
+            if any(word in p["project_name"].lower() for word in pn.split() if len(word) > 2)
+        ][:5]
+    candidates = [
+        (
+            p["project_name"],
+            p["client_name"],
+            [t["task_name"] for t in p["tasks"][:5]],
+        )
+        for p in candidate_pool[:5]
+    ]
+    return None, candidates
+
+
+def resolve_ids_with_diagnostics(
+    project_name: str, task_name: str, access_token: str = None
+) -> Dict:
+    """Like resolve_ids but always returns a dict with diagnostics.
+
+    On success: {"resolved": {project_id, task_id}, "candidates": []}
+    On failure: {"resolved": None, "candidates": [...]} where candidates
+    is up to 5 (project_name, client_name, top_task_names) tuples for the
+    closest projects we considered."""
+    resolved, candidates = _resolve_with_candidates(project_name, task_name, access_token)
+    return {"resolved": resolved, "candidates": candidates}
 
 
 def get_task_assignments(project_id: int, access_token: str = None) -> List[Dict]:

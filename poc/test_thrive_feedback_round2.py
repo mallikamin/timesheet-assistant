@@ -548,6 +548,172 @@ class ChatRecentEndpointTests(unittest.TestCase):
         self.assertEqual(sig.parameters["days"].default, 1)
 
 
+class HarvestCatalogTests(unittest.TestCase):
+    """The harvest_catalog module loads from the master CSV snapshot and
+    exposes the leave + internal-project ground truth."""
+
+    def test_leave_constants_match_harvest(self):
+        import harvest_catalog as hc
+        self.assertEqual(hc.LEAVE_PROJECT_NAME, "Thrive Leave FY26")
+        self.assertEqual(hc.LEAVE_PROJECT_CODE, "3-0006")
+        self.assertEqual(hc.LEAVE_PROJECT_CLIENT, "Thrive PR")
+        # Annual Leave is the canonical task name from the FY26 time report
+        self.assertIn("Leave - Annual Leave", hc.LEAVE_TASKS)
+        self.assertIn("Leave - Sick / Carer Leave", hc.LEAVE_TASKS)
+        # Phrase mapping resolves common AU vocab
+        self.assertEqual(hc.leave_task_for_phrase("annual leave"), "Leave - Annual Leave")
+        self.assertEqual(hc.leave_task_for_phrase("sick"), "Leave - Sick / Carer Leave")
+        self.assertEqual(hc.leave_task_for_phrase("TIL"), "Leave - Time in Lieu Leave")
+        self.assertEqual(hc.leave_task_for_phrase("funeral"), "Leave - Compassionate Leave (paid)")
+        self.assertIsNone(hc.leave_task_for_phrase("acuity work"))
+
+    def test_all_projects_loads_from_csv_snapshot(self):
+        import harvest_catalog as hc
+        projects = hc.all_projects()
+        # Snapshot has 107 active projects from Thrive Harvest
+        self.assertGreater(len(projects), 100)
+        names = {p.name for p in projects}
+        self.assertIn("Thrive Leave FY26", names)
+        self.assertIn("Thrive Operation FY26", names)
+        # Codes are populated
+        leave = next(p for p in projects if p.name == "Thrive Leave FY26")
+        self.assertEqual(leave.code, "3-0006")
+        self.assertEqual(leave.client, "Thrive PR")
+
+    def test_find_project_handles_short_form(self):
+        import harvest_catalog as hc
+        # Exact match
+        p = hc.find_project("Thrive Leave FY26")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.code, "3-0006")
+        # Substring fallback — short form should still resolve
+        p = hc.find_project("Thrive Leave")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.name, "Thrive Leave FY26")
+        # Client-name fallback
+        p = hc.find_project("Acuity")
+        self.assertIsNotNone(p)
+        self.assertTrue(p.name.startswith("Acuity - "))
+
+    def test_find_project_candidates_returns_close_matches(self):
+        import harvest_catalog as hc
+        cands = hc.find_project_candidates("Thrive", limit=5)
+        self.assertGreater(len(cands), 0)
+        # All returned candidates should mention Thrive somewhere
+        for p in cands:
+            self.assertTrue("Thrive" in p.name or "Thrive" in p.client)
+
+
+class ResolverSubstringFallbackTests(unittest.TestCase):
+    """harvest_api.resolve_ids must handle the AI saying 'Thrive Leave' when
+    Harvest has 'Thrive Leave FY26', and 'Annual Leave' when Harvest has
+    'Leave - Annual Leave'. This was the root cause of the 2026-05-06 UAT
+    'could not resolve' failure on Mon 18 May Annual Leave."""
+
+    def _fake_projects(self):
+        # Simulates the live Harvest catalog the resolver fetches
+        return [
+            {
+                "project_id": 7,
+                "project_name": "Thrive Leave FY26",
+                "client_name": "Thrive PR",
+                "tasks": [
+                    {"task_id": 101, "task_name": "Leave - Annual Leave"},
+                    {"task_id": 102, "task_name": "Leave - Sick / Carer Leave"},
+                    {"task_id": 103, "task_name": "Leave - Compassionate Leave (paid)"},
+                ],
+            },
+            {
+                "project_id": 11,
+                "project_name": "Thrive Operation FY26",
+                "client_name": "Thrive PR",
+                "tasks": [
+                    {"task_id": 201, "task_name": "Thrive Operation - Reporting & WIPs"},
+                    {"task_id": 202, "task_name": "Thrive Operation - Office Management"},
+                ],
+            },
+            {
+                "project_id": 50,
+                "project_name": "Acuity - Existing Business Growth FY26",
+                "client_name": "Acuity",
+                "tasks": [
+                    {"task_id": 301, "task_name": "Acuity - Existing Growth - BYD"},
+                ],
+            },
+        ]
+
+    def test_short_project_name_resolves_via_substring(self):
+        import harvest_api
+        with patch("harvest_api.get_projects_with_tasks", return_value=self._fake_projects()):
+            r = harvest_api.resolve_ids("Thrive Leave", "Annual Leave")
+        self.assertIsNotNone(r)
+        self.assertEqual(r["project_id"], 7)
+        self.assertEqual(r["task_id"], 101)
+
+    def test_client_name_resolves_via_substring(self):
+        import harvest_api
+        with patch("harvest_api.get_projects_with_tasks", return_value=self._fake_projects()):
+            r = harvest_api.resolve_ids("Acuity", "BYD")
+        self.assertIsNotNone(r)
+        self.assertEqual(r["project_id"], 50)
+        self.assertEqual(r["task_id"], 301)
+
+    def test_exact_match_still_wins_over_substring(self):
+        """If both 'Thrive Leave FY26' (exact) and another substring-matchable
+        project exist, exact must win. Guards against a regression where
+        substring tier accidentally short-circuits exact tier."""
+        import harvest_api
+        with patch("harvest_api.get_projects_with_tasks", return_value=self._fake_projects()):
+            r = harvest_api.resolve_ids("Thrive Leave FY26", "Leave - Annual Leave")
+        self.assertEqual(r["project_id"], 7)
+        self.assertEqual(r["task_id"], 101)
+
+    def test_diagnostics_returns_candidates_on_miss(self):
+        import harvest_api
+        with patch("harvest_api.get_projects_with_tasks", return_value=self._fake_projects()):
+            d = harvest_api.resolve_ids_with_diagnostics(
+                "Thrive Leave", "this task does not exist anywhere"
+            )
+        # Project resolves but task doesn't — we should get None + candidates
+        # (the project we considered, with its top tasks)
+        self.assertIsNone(d["resolved"])
+        self.assertGreater(len(d["candidates"]), 0)
+        # First candidate should be the Thrive Leave project we considered
+        proj_name, _client, top_tasks = d["candidates"][0]
+        self.assertEqual(proj_name, "Thrive Leave FY26")
+        self.assertIn("Leave - Annual Leave", top_tasks)
+
+    def test_diagnostics_returns_resolved_with_empty_candidates_on_hit(self):
+        import harvest_api
+        with patch("harvest_api.get_projects_with_tasks", return_value=self._fake_projects()):
+            d = harvest_api.resolve_ids_with_diagnostics("Thrive Leave", "Annual Leave")
+        self.assertIsNotNone(d["resolved"])
+        self.assertEqual(d["candidates"], [])
+
+
+class ApproveResolutionErrorMessageTests(unittest.TestCase):
+    """_format_resolution_error must surface the candidate list in a way
+    the user can act on — no more 'verify the project is active'."""
+
+    def test_no_candidates_falls_back_to_generic_message(self):
+        import app as app_mod
+        msg = app_mod._format_resolution_error("FooBar", "Baz", [])
+        self.assertIn("FooBar", msg)
+        self.assertIn("Baz", msg)
+        self.assertIn("Verify the project is active", msg)
+
+    def test_with_candidates_includes_actionable_options(self):
+        import app as app_mod
+        candidates = [
+            ("Thrive Leave FY26", "Thrive PR", ["Leave - Annual Leave", "Leave - Sick / Carer Leave"]),
+        ]
+        msg = app_mod._format_resolution_error("Thrive Leave", "Annual Leave", candidates)
+        self.assertIn("Closest matches", msg)
+        self.assertIn("Thrive Leave FY26", msg)
+        self.assertIn("Leave - Annual Leave", msg)
+        self.assertNotIn("Verify the project is active", msg)
+
+
 class ChatHistoryOrderingTests(unittest.TestCase):
     """Regression: get_chat_history must return the MOST RECENT N rows in
     ascending chronological order. The first version ordered ASC at the DB

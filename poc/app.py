@@ -277,7 +277,7 @@ Example flow:
   2. New Business Growth FY26
   3. Operations & Admin FY26"
 - User: "1"
-- You: "Got it — 2 hours on Acuity, Existing Business Growth FY26. Logging that now." [creates entry]
+- You: "Got it — 2 hours on Acuity - Existing Business Growth FY26. Logging that now." [creates entry]
 
 Rules:
 - Minimum time block is 5 minutes (0.08 hours). Round up to nearest 5 minutes.
@@ -303,13 +303,31 @@ applies to regular work, internal admin, and EVERY kind of leave (annual / sick 
 compassionate / funeral / unpaid / TIL).
 
 After the tool returns, write a short user-facing reply confirming the draft, e.g.
-"Drafted 7.5h on Thrive Leave / Annual Leave for 12 May — approve in the right panel
+"Drafted 7.5h on Thrive Leave FY26 / Leave - Annual Leave for 12 May — approve in the right panel
 to push to Harvest." Use the word "Drafted", never "Logged".
 
-Field mapping for save_entry:
-- "client" = the project name (e.g. "Acuity", "Afterpay", "Thrive Leave", "Thrive Operation FY26")
-- "project_code" = the task code (e.g. "6-1000", "2-1099") — empty string is fine when unknown
-- "project_name" = the task name (e.g. "Existing Business Growth FY26", "Annual Leave")
+Field mapping for save_entry — values MUST match the Harvest catalog naming exactly
+(see "Available Projects and Tasks" section below). Examples taken from real Thrive
+Harvest data — these are the actual project + task strings the API expects:
+- "client" = the FULL Harvest project name including "FY26" suffix and any " - " segments.
+  Examples (real, verbatim from the catalog):
+    "Acuity - Existing Business Growth FY26"
+    "Acuity - New Business Growth FY26"
+    "Afterpay Australia Pty Ltd - AUNZ Retainer 2026"
+    "Thrive Leave FY26"
+    "Thrive Operation FY26"
+    "Thrive Finance Operation FY26"
+    "Thrive Learning & Development FY26"
+  Common short-form errors to AVOID:
+    "Acuity"          → wrong, missing "- <Practice> FY26"
+    "Thrive Leave"    → wrong, missing "FY26"
+    "Annual Leave"    → that's a TASK, not a project
+- "project_code" = the Harvest project code from the catalog (e.g. "3-0006" for Thrive Leave FY26,
+  "6-1000" for Acuity Existing Business Growth). Empty string is fine when unknown — the resolver
+  will fall back to name matching.
+- "project_name" = the FULL Harvest task name verbatim. The Thrive convention is
+  "<Family> - <Subtype>" (e.g. "Leave - Annual Leave", "Thrive Operation - Reporting & WIPs",
+  "Thrive Finance - Bank Reconciliation", "Thrive L&D - Weekly Planning").
 - "task" = same as project_name
 - "hours" = numeric, minimum 0.08 (5 min); a full leave day = 7.5
 - "date" = YYYY-MM-DD; see Date handling below
@@ -389,25 +407,39 @@ REFERENCE — self-consistency & data-trust rules (CRITICAL — production obser
 REFERENCE — edge cases:
 - All-day blocks ("worked on X today"): default 7.5 hours unless the user has logged other entries today; in that case ask "is that the rest of today, or in addition to what you've already logged?"
 - Multi-task days ("did emails, then a meeting, then drafted a proposal"): create one entry per task, ask for duration of each.
-- Future dates ("tomorrow", "next Monday", "12th May", scheduled annual leave): ALLOWED. Harvest accepts future spent_date and the leave + planned-work flow needs it. Confirm the resolved YYYY-MM-DD with the user before creating the draft, but never refuse a future date. Examples: "for Thursday's pitch" -> create draft for that Thursday; "Annual Leave next Monday" -> create draft on that Monday.
+- Future dates ("tomorrow", "next Monday", "12th May", scheduled annual leave): future dates ALLOWED. Harvest accepts future spent_date and the leave + planned-work flow needs it. Confirm the resolved YYYY-MM-DD with the user before creating the draft, but never refuse a future date. Examples: "for Thursday's pitch" -> create draft for that Thursday; "Annual Leave next Monday" -> create draft on that Monday.
 - Past dates ("last Tuesday"): convert to absolute YYYY-MM-DD using today's date as reference, confirm date with the user before logging.
 - Negative durations / zero hours: refuse, ask for clarification.
 - Hours > 16 in a single entry: confirm before logging — likely a typo or a "this whole week" misphrasing.
 
 REFERENCE — internal Thrive admin / non-client work (CRITICAL — Miles couldn't find general admin / reporting codes / Thrive L&D):
-Many users log time against internal Thrive projects, NOT against a billable client. These projects start with "Thrive " in the catalog above. **Override the assigned-projects pruning rule for internal work** — every Thrive employee can log time against any "Thrive *" project even if it doesn't appear in their personal Assigned list. Do NOT hide internal projects with "you're not assigned to that".
+Many users log time against internal Thrive projects under client "Thrive PR", NOT against a billable client. These projects start with "Thrive " in the catalog and follow the convention "Thrive <Function> FY26". **Override the assigned-projects pruning rule for internal work** — every Thrive employee can log time against any "Thrive *" project even if it doesn't appear in their personal Assigned list. Do NOT hide internal projects with "you're not assigned to that".
 
-Phrase mapping (look for the matching "Thrive *" project in the catalog):
-- "general admin", "admin", "ops", "operations", "internal stuff" -> Thrive Operation FY26 (task: Reporting & WIPs, or another internal task on that project)
-- "emails", "inbox", "to-do list", "to do list", "inbox triage", "catch-up on emails" -> Thrive Operation FY26 / Reporting & WIPs OR the user's regular client retainer (ask which one if ambiguous)
-- "training", "L&D", "learning and development", "learning & development", "weekly planning", "team training", "peer support" -> Thrive Learning & Development FY26 (tasks: Weekly Planning, Agency WIPs, SLT WIPs, Local WIPs, Peer Support)
-- "month end", "month-end", "invoicing", "finance", "estimates", "budget", "tax", "payroll", "accounts payable", "accounts receivable", "Xero" -> Thrive Finance Operation FY26 (tasks: Systems & Process Improvement, Reporting & WIPs, Tax and Accounting, Payroll, Estimate & invoice, Accounts Receivables, Bills & Accounts Payable, Thrive Budget, Clients Budget)
-- "team meeting", "all hands", "all-in WIP", "agency WIP", "weekly WIP" -> Thrive L&D / Agency WIPs OR Thrive Operation FY26 / Reporting & WIPs (ask which one)
-- "culture", "social events", "Thrive O'Clock", "office support" -> Thrive Culture & Social FY26 (tasks: Thrive O'Clock, Social Events, Office Support)
-- "innovation", "digital champions", "Timesheet Assistant" (this app), "AI tooling" -> Thrive Innovation Project (tasks: Digital Champions, Innovation Project)
-- "annual leave", "sick leave", "carer leave", "unpaid leave", "time in lieu", "TIL", "funeral leave" -> Thrive Leave (full day = 7.5h; future dates ALLOWED)
-- "social content", "case studies", "social media post", "approvals" -> Thrive Social Media & Content FY26
-- "new business", "biz dev for Thrive", "existing growth for Diageo/LEGO/etc internal" -> Thrive New Business - Existing Growth FY26
+Task names under these projects ALSO follow a convention: "<Family> - <Subtype>" (e.g. "Thrive Operation - Reporting & WIPs", "Thrive L&D - Weekly Planning"). The "Thrive <Family> - " prefix is REQUIRED — the resolver will not match a bare task name like "Reporting & WIPs" to the right project.
+
+Phrase mapping (USE THESE EXACT project + task names — they are verbatim from Harvest):
+- "general admin", "admin", "ops", "operations", "internal stuff" -> project "Thrive Operation FY26" (3-0011), tasks: "Thrive Operation - Office Management", "Thrive Operation - Reporting & WIPs", "Thrive Operation - e-Sign Management", "Thrive Operation - ELT Management"
+- "emails", "inbox", "to-do list", "to do list", "inbox triage", "catch-up on emails" -> "Thrive Operation FY26" / "Thrive Operation - Reporting & WIPs" OR the user's regular client retainer (ask which one if ambiguous)
+- "training", "L&D", "learning and development", "learning & development", "weekly planning", "team training", "peer support" -> project "Thrive Learning & Development FY26" (3-0001), tasks: "Thrive L&D - Weekly Planning", "Thrive L&D - Peer Support", "Thrive L&D - Agency WIPs", "Thrive L&D - Local WIPs", "Thrive L&D - SLT WIPs", "Thrive L&D - On-the-Job Training", "Thrive L&D - New Staff Induction"
+- "month end", "month-end", "invoicing", "finance", "estimates", "budget", "tax", "payroll", "accounts payable", "accounts receivable", "Xero" -> project "Thrive Finance Operation FY26" (3-0013), tasks: "Thrive Finance - Bank Reconciliation", "Thrive Finance - Bills & Accounts Payable", "Thrive Finance - Systems & Process Improvement", "Thrive Finance - Estimates + Invoicing", "Thrive Finance - Accounts Receivables", "Thrive Finance - Payroll", "Thrive Finance - Tax and Accounting"
+- "team meeting", "all hands", "all-in WIP", "agency WIP", "weekly WIP" -> "Thrive Learning & Development FY26" / "Thrive L&D - Agency WIPs" OR "Thrive Operation FY26" / "Thrive Operation - Reporting & WIPs" (ask which one)
+- "culture", "social events", "Thrive O'Clock", "office support" -> project "Thrive Culture & Social FY26" (3-0002), tasks: "Thrive Culture - Thrive O’Clock", "Thrive Culture - Social Events", "Thrive Culture - Office Support"
+- "innovation", "digital champions", "Timesheet Assistant" (this app), "AI tooling" -> project "Thrive Innovation Project", tasks: "Thrive - Digital Champions", "Thrive - Innovation Project"
+- "annual leave" -> project "Thrive Leave FY26" (3-0006), task "Leave - Annual Leave"
+- "sick leave", "carer leave" -> "Thrive Leave FY26" / "Leave - Sick / Carer Leave"
+- "unpaid leave" -> "Thrive Leave FY26" / "Leave - Unpaid Leave"
+- "time in lieu", "TIL", "lieu day" -> "Thrive Leave FY26" / "Leave - Time in Lieu Leave"
+- "compassionate leave", "funeral leave", "bereavement" -> "Thrive Leave FY26" / "Leave - Compassionate Leave (paid)"
+- "wellness day", "mental health day" -> "Thrive Leave FY26" / "Leave - Wellness Day Leave"
+- "public holiday" -> "Thrive Leave FY26" / "Leave - Public Holiday Leave"
+- "jury duty" -> "Thrive Leave FY26" / "Leave - Jury Duty Leave"
+- "Friday 4pm finish", "early Friday finish" -> "Thrive Leave FY26" / "Leave - Friday 4pm Finish"
+- "social content", "case studies", "social media post", "approvals" -> "Thrive Social Media & Content FY26" / "Thrive Content - Social Media & Content"
+- "P&C", "people and culture", "recruitment", "hiring" -> "Thrive P&C Operation FY26" (3-0012), tasks: "Thrive P&C - Reporting & WIPs", "Thrive P&C - Recruitment", "Thrive P&C - Employee Reviews"
+- "IT support", "tech help", "computer issues" -> "Thrive IT Operation FY26" (3-0015) / "Thrive IT - Daily Support"
+- "ELT meeting", "exec meeting", "leadership meeting" -> "Thrive ELT FY26" (3-0018) / "Thrive ELT - WOB, WIP & Planning Meetings"
+- "marketing", "Thrive brand", "content development" -> "Thrive Marketing & Brand FY26" (3-0016) / "Thrive Brand - Content Development"
+- "new business", "biz dev for Thrive", "outreach" -> "Thrive New Business - New Growth FY26" (3-0004), tasks: "Thrive Growth - Reporting & WIPs", "Thrive Growth - Creating Creds Decks", "Thrive Growth - Outreach", "Thrive Growth - Inbound Enquiries", "Thrive Growth - External Meetings"
 
 If the user names a Thrive internal project that isn't in the catalog above, do NOT make one up — say plainly "I can't see a 'Thrive X' project in the catalog. The closest matches are: A, B, C — which one fits?" and list the 3-5 nearest Thrive-prefixed projects from the catalog.
 
@@ -1996,6 +2028,27 @@ async def chat_stream(req: ChatRequest, request: Request):
     )
 
 
+def _format_resolution_error(client_name: str, task_name: str, candidates: List) -> str:
+    """Build an actionable error message when name resolution fails. Falls
+    back to a generic message when there are no close candidates — but
+    when we DO have candidates, surface them so the user can pick the
+    right project/task without round-tripping the AI."""
+    base = (
+        f"Harvest could not resolve project '{client_name}' "
+        f"+ task '{task_name}'."
+    )
+    if not candidates:
+        return base + " Verify the project is active and the task name matches Harvest."
+    lines = [base, "Closest matches in Harvest:"]
+    for proj_name, client, top_tasks in candidates:
+        client_part = f" (client: {client})" if client and client != proj_name else ""
+        lines.append(f"  • {proj_name}{client_part}")
+        for t in top_tasks[:3]:
+            lines.append(f"      ↳ {t}")
+    lines.append("Re-send the entry with one of these project/task names, or update Harvest if a project is missing.")
+    return "\n".join(lines)
+
+
 @app.post("/api/entries/approve-all")
 async def approve_all_entries(request: Request):
     """Approve all draft entries for the current user."""
@@ -2024,6 +2077,12 @@ async def approve_all_entries(request: Request):
     entries = harvest_mock.get_entries(user=user_name)
     drafts = [e for e in entries if e.get("status") in ("Draft", "Needs Review")]
 
+    # Latency prewarm: one async fetch warms the cache for every draft we
+    # iterate below. Without this, each draft pays the cold-cache cost
+    # against a sync client in series — N drafts × ~20s = unusable.
+    if drafts:
+        await harvest_api.get_projects_with_tasks_async(harvest_access_token)
+
     results = []
     for entry in drafts:
         harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
@@ -2051,21 +2110,24 @@ async def approve_all_entries(request: Request):
 
         # Fallback to name resolution
         if not harvest_entry:
-            harvest_entry = harvest_api.push_entry(
-                client_name=entry.get("client", ""),
-                task_name=entry.get("project_name", entry.get("task", "")),
-                spent_date=entry.get("date", local_today_iso),
-                hours=float(entry.get("hours", 0)),
-                notes=entry.get("notes", ""),
-                user_id=harvest_user_id,
-                access_token=harvest_access_token,
+            client_name = entry.get("client", "")
+            task_name = entry.get("project_name", entry.get("task", ""))
+            diag = harvest_api.resolve_ids_with_diagnostics(
+                client_name, task_name, harvest_access_token
             )
-            if not harvest_entry and not push_error:
-                push_error = (
-                    f"Harvest could not resolve project '{entry.get('client','')}' "
-                    f"+ task '{entry.get('project_name', entry.get('task',''))}' "
-                    "— project may be inactive or task name doesn't match."
+            if diag["resolved"]:
+                harvest_entry = harvest_api.create_time_entry(
+                    project_id=diag["resolved"]["project_id"],
+                    task_id=diag["resolved"]["task_id"],
+                    spent_date=entry.get("date", local_today_iso),
+                    hours=float(entry.get("hours", 0)),
+                    notes=entry.get("notes", ""),
+                    user_id=harvest_user_id,
+                    access_token=harvest_access_token,
+                    task_name=task_name,
                 )
+            if not harvest_entry and not push_error:
+                push_error = _format_resolution_error(client_name, task_name, diag.get("candidates", []))
 
         if harvest_entry:
             harvest_mock.update_entry(entry["id"], status="Approved", harvest_id=harvest_entry["id"])
@@ -2221,6 +2283,11 @@ async def approve_entry(entry_id: str, request: Request):
     # Push to Harvest
     print(f"Approve entry {entry_id}: client='{entry.get('client')}' project_code='{entry.get('project_code')}' task='{entry.get('project_name', entry.get('task'))}'")
     user_email = user.get("email", "")
+    # Latency prewarm: populate the project cache via the async fetcher
+    # (shared httpx connection pool) so the sync resolver below sees a
+    # warm cache and skips the slow per-call TLS handshake path. Cuts
+    # Approve latency from ~20s to ~1-2s on cold cache.
+    await harvest_api.get_projects_with_tasks_async(harvest_access_token)
     harvest_user_id = harvest_api.resolve_user_id(user_email, harvest_access_token) if user_email else None
     local_today_iso = _today_local_iso(user_email)
 
@@ -2247,21 +2314,24 @@ async def approve_entry(entry_id: str, request: Request):
 
     # Fallback to name resolution
     if not harvest_entry:
-        harvest_entry = harvest_api.push_entry(
-            client_name=entry.get("client", ""),
-            task_name=entry.get("project_name", entry.get("task", "")),
-            spent_date=entry.get("date", local_today_iso),
-            hours=float(entry.get("hours", 0)),
-            notes=entry.get("notes", ""),
-            user_id=harvest_user_id,
-            access_token=harvest_access_token,
+        client_name = entry.get("client", "")
+        task_name = entry.get("project_name", entry.get("task", ""))
+        diag = harvest_api.resolve_ids_with_diagnostics(
+            client_name, task_name, harvest_access_token
         )
-        if not harvest_entry and not push_error:
-            push_error = (
-                f"Harvest could not resolve project '{entry.get('client','')}' "
-                f"+ task '{entry.get('project_name', entry.get('task',''))}'. "
-                "Verify the project is active and the task name matches Harvest."
+        if diag["resolved"]:
+            harvest_entry = harvest_api.create_time_entry(
+                project_id=diag["resolved"]["project_id"],
+                task_id=diag["resolved"]["task_id"],
+                spent_date=entry.get("date", local_today_iso),
+                hours=float(entry.get("hours", 0)),
+                notes=entry.get("notes", ""),
+                user_id=harvest_user_id,
+                access_token=harvest_access_token,
+                task_name=task_name,
             )
+        if not harvest_entry and not push_error:
+            push_error = _format_resolution_error(client_name, task_name, diag.get("candidates", []))
 
     if not harvest_entry:
         return {

@@ -56,7 +56,7 @@ import time_utils  # noqa: E402
 # Real Thrive emails per memory.
 MILES = "miles.alexander@thrivepr.com.au"
 MICHAEL = "michael.adamson@thrivepr.com.au"
-HUGH = "hugh@thrivepr.co.nz"
+HUGH = "hugh.preston@thrivepr.com.au"
 
 
 def _build_prompt(user_email: str, runtime_notes=None, harvest_token=None) -> str:

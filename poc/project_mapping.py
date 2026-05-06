@@ -100,12 +100,61 @@ def _load_from_harvest(access_token: str = None) -> List[Dict]:
     return result
 
 
+def _catalog_snapshot_fallback() -> List[Dict]:
+    """Build a project list from the harvest_catalog snapshot — used when
+    live Harvest is unavailable. Beats HARVEST_PROJECTS_FALLBACK (which is
+    dummy data) because it gives the AI the REAL Thrive project names so
+    it doesn't hallucinate canonical short names that won't resolve."""
+    try:
+        import harvest_catalog as hc
+    except ImportError:
+        return HARVEST_PROJECTS_FALLBACK
+    out: List[Dict] = []
+    # Internal Thrive projects with their known top tasks
+    for proj_name, code, tasks in hc.INTERNAL_PROJECTS:
+        out.append({
+            "project": proj_name,
+            "keywords": [proj_name.lower()],
+            "tasks": [
+                {"code": code, "name": t, "keywords": [w.lower() for w in t.split() if len(w) > 2]}
+                for t in tasks
+            ],
+        })
+    # Leave project + all 10 leave subtypes
+    out.append({
+        "project": hc.LEAVE_PROJECT_NAME,
+        "keywords": ["leave", "leave fy26", hc.LEAVE_PROJECT_NAME.lower()],
+        "tasks": [
+            {
+                "code": hc.LEAVE_PROJECT_CODE,
+                "name": t,
+                "keywords": [w.lower() for w in t.replace("Leave - ", "").split() if len(w) > 2],
+            }
+            for t in hc.LEAVE_TASKS
+        ],
+    })
+    # All other active projects (without task detail — task list comes from
+    # live Harvest at runtime; offline mode just lists names so the AI can
+    # at least suggest the right project).
+    internal_names = {n for n, _, _ in hc.INTERNAL_PROJECTS} | {hc.LEAVE_PROJECT_NAME}
+    for p in hc.all_projects():
+        if p.name in internal_names:
+            continue
+        out.append({
+            "project": p.name,
+            "keywords": [p.name.lower(), p.client.lower()] if p.client else [p.name.lower()],
+            "tasks": [],  # tasks come from live Harvest; offline mode degrades gracefully
+        })
+    return out
+
+
 def get_projects(access_token: str = None) -> List[Dict]:
-    """Get project list — live from Harvest if available, otherwise fallback."""
+    """Get project list — live from Harvest if available, otherwise fallback
+    to the catalog snapshot from poc/data/harvest_master/."""
     live = _load_from_harvest(access_token)
     if live:
         return live
-    return HARVEST_PROJECTS_FALLBACK
+    return _catalog_snapshot_fallback()
 
 
 def get_all_projects_for_prompt(access_token: str = None) -> str:
@@ -150,11 +199,12 @@ async def _load_from_harvest_async(access_token: str = None) -> List[Dict]:
 
 
 async def get_projects_async(access_token: str = None) -> List[Dict]:
-    """Async project list — live from Harvest (async) if available, else fallback."""
+    """Async project list — live from Harvest (async) if available, else
+    catalog snapshot. Same semantics as get_projects()."""
     live = await _load_from_harvest_async(access_token)
     if live:
         return live
-    return HARVEST_PROJECTS_FALLBACK
+    return _catalog_snapshot_fallback()
 
 
 async def get_all_projects_for_prompt_async(access_token: str = None) -> str:
