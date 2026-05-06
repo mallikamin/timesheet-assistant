@@ -315,8 +315,13 @@ class CmdEnterReplayTests(unittest.TestCase):
     def test_template_keydown_sends_on_plain_enter_only(self):
         path = _HERE / "templates" / "index.html"
         src = path.read_text(encoding="utf-8")
-        # Modifiers must short-circuit and let the textarea insert a newline.
-        self.assertIn("if (e.metaKey || e.ctrlKey || e.shiftKey) return;", src)
+        # Cmd/Ctrl+Enter must splice "\n" at the cursor (browsers don't
+        # insert a newline natively for that combo in a textarea).
+        self.assertIn("if (e.metaKey || e.ctrlKey)", src)
+        self.assertIn("chatInput.selectionStart", src)
+        self.assertIn("chatInput.selectionEnd", src)
+        # Shift+Enter falls through to native textarea newline.
+        self.assertIn("if (e.shiftKey) return;", src)
         # Plain Enter calls sendMessage() after preventDefault.
         self.assertIn("sendMessage()", src)
 
