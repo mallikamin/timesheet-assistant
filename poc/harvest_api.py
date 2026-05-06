@@ -320,10 +320,20 @@ def _resolve_with_candidates(
 
     `candidates` is a list of up to 5 (project_name, client_name, top_task_names)
     tuples for the closest projects we considered, used to build
-    actionable error messages."""
+    actionable error messages.
+
+    Special sentinel: if the live Harvest project list comes back empty
+    (API error / token issue / rate limit), we tag the candidate list with
+    a __HARVEST_FETCH_EMPTY__ marker so the caller can show a different
+    error than 'no name match'. Empty == we couldn't even check."""
     projects = get_projects_with_tasks(access_token)
     if not projects:
-        return None, []
+        print(
+            "[harvest_api] resolve_ids: project list is EMPTY — "
+            "live fetch failed or token has no project visibility. "
+            f"Tried to resolve project={project_name!r} task={task_name!r}"
+        )
+        return None, [("__HARVEST_FETCH_EMPTY__", "", [])]
     pn = (project_name or "").strip().lower()
     tn = (task_name or "").strip().lower()
     if not pn:

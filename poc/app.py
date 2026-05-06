@@ -1267,6 +1267,89 @@ async def health(request: Request):
     }
 
 
+@app.get("/api/_diag/harvest")
+async def diag_harvest(request: Request):
+    """UAT diagnostic — dump the Harvest project cache state, force a fresh
+    fetch with the user's OAuth token, and try resolving a known-canonical
+    project + task. Returns JSON. Authenticated users only.
+
+    No secrets in the response — token presence is reported as bool only."""
+    user = get_current_user(request)
+    if not user:
+        return {"error": "not authenticated"}
+
+    harvest_token = request.session.get("harvest_token")
+    access_token = None
+    token_state = "no_session_token"
+    if harvest_token:
+        valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+        if valid_token:
+            access_token = valid_token["access_token"]
+            token_state = "valid"
+            request.session["harvest_token"] = valid_token
+        else:
+            token_state = "expired_could_not_refresh"
+
+    cache_state = {
+        "cached_project_count": len(harvest_api._project_cache or []),
+        "cache_age_seconds": int(time.time() - harvest_api._cache_time) if harvest_api._cache_time else None,
+        "cache_ttl_seconds": harvest_api.CACHE_TTL,
+    }
+
+    # Force a fresh fetch (bypass cache) so we see what Harvest is actually
+    # returning right now for this user's token.
+    harvest_api._project_cache = None
+    harvest_api._cache_time = 0
+    fresh: List[Dict] = []
+    fetch_error: Optional[str] = None
+    try:
+        fresh = await harvest_api.get_projects_with_tasks_async(access_token)
+    except Exception as e:
+        fetch_error = repr(e)
+
+    # Try resolving the exact pair that's failing in UAT
+    try:
+        diag = harvest_api.resolve_ids_with_diagnostics(
+            "Thrive Operation FY26",
+            "Thrive Operation - Reporting & WIPs",
+            access_token,
+        )
+    except Exception as e:
+        diag = {"resolved": None, "candidates": [], "_resolve_error": repr(e)}
+
+    thrive_ops_matches = [
+        {
+            "project_name": p["project_name"],
+            "client_name": p["client_name"],
+            "tasks": [t["task_name"] for t in p["tasks"]],
+        }
+        for p in fresh
+        if "thrive operation" in p["project_name"].lower()
+    ]
+
+    return {
+        "user_email": user.get("email"),
+        "token_state": token_state,
+        "harvest_account_id_env": bool(os.getenv("HARVEST_ACCOUNT_ID")),
+        "cache_state_before_fresh_fetch": cache_state,
+        "fresh_fetch_count": len(fresh),
+        "fresh_fetch_error": fetch_error,
+        "fresh_fetch_first_5_names": [
+            f"{p['project_name']} (client={p['client_name']})" for p in fresh[:5]
+        ],
+        "thrive_operation_matches": thrive_ops_matches,
+        "test_resolve_thrive_operation": {
+            "input_project": "Thrive Operation FY26",
+            "input_task": "Thrive Operation - Reporting & WIPs",
+            "resolved": diag.get("resolved"),
+            "candidates": [
+                {"project": n, "client": c, "tasks": t}
+                for n, c, t in diag.get("candidates", [])
+            ],
+        },
+    }
+
+
 # --- Auth Routes ---
 
 @app.get("/login", response_class=HTMLResponse)
@@ -2029,16 +2112,32 @@ async def chat_stream(req: ChatRequest, request: Request):
 
 
 def _format_resolution_error(client_name: str, task_name: str, candidates: List) -> str:
-    """Build an actionable error message when name resolution fails. Falls
-    back to a generic message when there are no close candidates — but
-    when we DO have candidates, surface them so the user can pick the
-    right project/task without round-tripping the AI."""
+    """Build an actionable error message when name resolution fails.
+
+    Three error modes:
+      1. Harvest API returned no projects at all (auth / scope / rate limit /
+         outage) — tagged via __HARVEST_FETCH_EMPTY__ sentinel from the
+         resolver. Tell the user this is a Harvest connectivity issue, not
+         a name mismatch.
+      2. Harvest returned projects but none matched — show the closest
+         candidates so the user / AI can correct the name.
+      3. No info at all — fall back to the original generic message."""
     base = (
         f"Harvest could not resolve project '{client_name}' "
         f"+ task '{task_name}'."
     )
+    # Mode 1: live fetch came back empty — surface that explicitly
+    if candidates and candidates[0][0] == "__HARVEST_FETCH_EMPTY__":
+        return (
+            f"{base}\n\n"
+            "Harvest returned no project list for your account — likely an OAuth "
+            "scope or session issue. Try Sign Out → Sign In with Harvest, then "
+            "approve again. If it persists, hit /api/_diag/harvest in the browser "
+            "and share the JSON output."
+        )
     if not candidates:
         return base + " Verify the project is active and the task name matches Harvest."
+    # Mode 2: candidates available
     lines = [base, "Closest matches in Harvest:"]
     for proj_name, client, top_tasks in candidates:
         client_part = f" (client: {client})" if client and client != proj_name else ""
