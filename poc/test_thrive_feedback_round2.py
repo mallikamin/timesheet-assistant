@@ -691,6 +691,37 @@ class ResolverSubstringFallbackTests(unittest.TestCase):
         self.assertEqual(d["candidates"], [])
 
 
+class NotesFallbackTests(unittest.TestCase):
+    """Some Thrive Harvest projects (e.g. Thrive Operation FY26) require
+    non-empty notes at the API level. _derive_notes_fallback supplies a
+    sensible default when the user didn't write notes themselves."""
+
+    def test_strips_family_prefix(self):
+        import app as app_mod
+        cases = [
+            ("Leave - Annual Leave", "Annual Leave"),
+            ("Thrive Operation - Reporting & WIPs", "Reporting & WIPs"),
+            ("Thrive L&D - Weekly Planning", "Weekly Planning"),
+            ("Client - Internal WIP", "Internal WIP"),
+            ("Thrive Finance - Bank Reconciliation", "Bank Reconciliation"),
+        ]
+        for inp, expected in cases:
+            self.assertEqual(app_mod._derive_notes_fallback(inp), expected,
+                             f"input={inp!r}")
+
+    def test_no_prefix_returns_full_name(self):
+        import app as app_mod
+        self.assertEqual(app_mod._derive_notes_fallback("Reporting & WIPs"),
+                         "Reporting & WIPs")
+
+    def test_empty_input_returns_branded_default(self):
+        import app as app_mod
+        self.assertEqual(app_mod._derive_notes_fallback(""),
+                         "Time logged via Timesheet Assistant")
+        self.assertEqual(app_mod._derive_notes_fallback("   "),
+                         "Time logged via Timesheet Assistant")
+
+
 class ApproveResolutionErrorMessageTests(unittest.TestCase):
     """_format_resolution_error must surface the candidate list in a way
     the user can act on — no more 'verify the project is active'."""

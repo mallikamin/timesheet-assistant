@@ -995,7 +995,13 @@ TOOLS = [
                 },
                 "notes": {
                     "type": "string",
-                    "description": "Short description of work done (e.g. 'Funeral', 'Inbox triage', 'Strategy session').",
+                    "description": (
+                        "Short description of work done — REQUIRED, must not be empty. Some Thrive Harvest "
+                        "projects (e.g. Thrive Operation FY26) reject entries with blank notes at the API level. "
+                        "Use the user's own phrasing when possible (e.g. 'inbox triage', 'general admin', "
+                        "'finance month-end', 'L&D weekly planning'). For leave entries use the leave subtype "
+                        "(e.g. 'Annual Leave', 'Sick Leave'). Never leave empty."
+                    ),
                 },
                 "date": {
                     "type": "string",
@@ -2163,6 +2169,30 @@ async def chat_stream(req: ChatRequest, request: Request):
     )
 
 
+def _derive_notes_fallback(task_name: str) -> str:
+    """Build sensible default notes when the user didn't provide any.
+
+    Strips the Harvest "<Family> - " prefix so the notes read like a
+    description, not a duplicate of the task field. Examples:
+      "Leave - Annual Leave"               → "Annual Leave"
+      "Thrive Operation - Reporting & WIPs"→ "Reporting & WIPs"
+      "Thrive L&D - Weekly Planning"       → "Weekly Planning"
+      "Client - Internal WIP"              → "Internal WIP"
+      "Reporting & WIPs"                   → "Reporting & WIPs"  (no prefix to strip)
+
+    Some Thrive projects (Thrive Operation FY26 etc.) enforce
+    notes-required at the Harvest API level — without this, every
+    Approve on those projects 422s with 'Notes can't be blank'."""
+    t = (task_name or "").strip()
+    if not t:
+        return "Time logged via Timesheet Assistant"
+    if " - " in t:
+        # Drop the first segment (the family prefix). Keep the rest verbatim
+        # so multi-segment task names still read sensibly.
+        return t.split(" - ", 1)[1].strip() or t
+    return t
+
+
 def _format_create_error(
     client_name: str, task_name: str, resolved: Dict, err: Optional[Dict]
 ) -> str:
@@ -2295,12 +2325,15 @@ async def approve_all_entries(request: Request):
                 client_name, task_name, harvest_access_token
             )
             if diag["resolved"]:
+                notes = entry.get("notes", "") or ""
+                if not notes.strip():
+                    notes = _derive_notes_fallback(task_name)
                 harvest_entry, create_err = harvest_api.create_time_entry_with_diag(
                     project_id=diag["resolved"]["project_id"],
                     task_id=diag["resolved"]["task_id"],
                     spent_date=entry.get("date", local_today_iso),
                     hours=float(entry.get("hours", 0)),
-                    notes=entry.get("notes", ""),
+                    notes=notes,
                     user_id=harvest_user_id,
                     access_token=harvest_access_token,
                     task_name=task_name,
@@ -2507,12 +2540,15 @@ async def approve_entry(entry_id: str, request: Request):
             # capture so we surface the REAL Harvest rejection instead of
             # falling back to "could not resolve" (which would be misleading
             # because resolution worked).
+            notes = entry.get("notes", "") or ""
+            if not notes.strip():
+                notes = _derive_notes_fallback(task_name)
             harvest_entry, create_err = harvest_api.create_time_entry_with_diag(
                 project_id=diag["resolved"]["project_id"],
                 task_id=diag["resolved"]["task_id"],
                 spent_date=entry.get("date", local_today_iso),
                 hours=float(entry.get("hours", 0)),
-                notes=entry.get("notes", ""),
+                notes=notes,
                 user_id=harvest_user_id,
                 access_token=harvest_access_token,
                 task_name=task_name,
