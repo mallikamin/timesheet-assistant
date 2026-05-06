@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "day-name-fix-2026-05-07f"
+BUILD_MARKER = "today-banner-drafts-2026-05-07g"
 
 
 @asynccontextmanager
