@@ -131,13 +131,17 @@ def resolve_user_id(email: str, access_token: str = None) -> Optional[int]:
 
 async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
     """Async version of get_projects_with_tasks — uses httpx.AsyncClient with
-    a SHARED connection pool and asyncio.gather to parallelize the 51 task
-    assignment calls properly. The previous sync + ThreadPoolExecutor version
-    creates a new TLS connection per call (httpx.get is a one-shot client),
-    which on Render was producing 30-44s cold-cache fetches in production.
+    a SHARED connection pool and asyncio.gather to parallelize the per-project
+    task-assignment calls. With ~107 active projects on Thrive's account this
+    is 108 HTTPS round-trips total.
 
-    With AsyncClient + connection reuse, expected cold-cache cost drops to
-    ~500ms-1.5s for 51 projects."""
+    Concurrency cap: SEMAPHORE_LIMIT (15). Harvest's documented rate limit is
+    100 requests / 15s per account, with Cloudflare (in front of api.harvest
+    app.com) flat-out 429-blocking unbounded bursts. 2026-05-06 UAT proved
+    unbounded gather() trips the limit and silently empties the project
+    list — which then masquerades as a 'could not resolve' error downstream.
+    Capping concurrency keeps us inside the budget and trades ~200ms of
+    extra latency for reliability."""
     global _project_cache, _cache_time
 
     if _project_cache and (time.time() - _cache_time) < CACHE_TTL:
@@ -145,10 +149,9 @@ async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
 
     fetch_t0 = time.time()
     headers = _headers(access_token)
+    SEMAPHORE_LIMIT = 15
 
     try:
-        # Single AsyncClient — connection pool shared across all 51 calls.
-        # http2=False keeps things simple (Harvest does HTTP/1.1 keep-alive).
         async with httpx.AsyncClient(timeout=15, headers=headers) as client:
             resp = await client.get(
                 f"{HARVEST_BASE}/projects",
@@ -161,20 +164,32 @@ async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
             projects = resp.json().get("projects", [])
             list_ms = int((time.time() - fetch_t0) * 1000)
 
+            sem = asyncio.Semaphore(SEMAPHORE_LIMIT)
+
             async def _fetch_one(pid: int) -> List[Dict]:
-                try:
-                    r = await client.get(
-                        f"{HARVEST_BASE}/projects/{pid}/task_assignments",
-                        params={"is_active": "true"},
-                    )
-                    if r.status_code != 200:
+                async with sem:
+                    try:
+                        r = await client.get(
+                            f"{HARVEST_BASE}/projects/{pid}/task_assignments",
+                            params={"is_active": "true"},
+                        )
+                        if r.status_code == 429:
+                            # Throttled — back off and retry once. The
+                            # semaphore should normally prevent this, but
+                            # Cloudflare's burst window is short.
+                            await asyncio.sleep(2.0)
+                            r = await client.get(
+                                f"{HARVEST_BASE}/projects/{pid}/task_assignments",
+                                params={"is_active": "true"},
+                            )
+                        if r.status_code != 200:
+                            return []
+                        return [
+                            {"task_id": ta["task"]["id"], "task_name": ta["task"]["name"]}
+                            for ta in r.json().get("task_assignments", [])
+                        ]
+                    except Exception:
                         return []
-                    return [
-                        {"task_id": ta["task"]["id"], "task_name": ta["task"]["name"]}
-                        for ta in r.json().get("task_assignments", [])
-                    ]
-                except Exception:
-                    return []
 
             ta_t0 = time.time()
             ta_lists = await asyncio.gather(
@@ -198,7 +213,8 @@ async def get_projects_with_tasks_async(access_token: str = None) -> List[Dict]:
         total_ms = int((time.time() - fetch_t0) * 1000)
         print(
             f"[harvest_api] async fetch done: {len(result)} projects in "
-            f"{total_ms}ms (list={list_ms}ms, task_assignments={ta_ms}ms parallel)"
+            f"{total_ms}ms (list={list_ms}ms, task_assignments={ta_ms}ms "
+            f"parallel, sem={SEMAPHORE_LIMIT})"
         )
         return result
 
@@ -514,6 +530,23 @@ def create_time_entry_with_diag(
             entry = resp.json()
             print(f"Harvest entry created: ID {entry['id']}")
             return entry, None
+
+        # 429 — Cloudflare/Harvest rate limit. Sleep + retry once. The
+        # semaphore in the project-list fetcher mitigates burst load, but
+        # an Approve right after a cold prewarm can still trip the budget.
+        if resp.status_code == 429:
+            print(f"Harvest 429 on create_time_entry — sleeping 3s and retrying once")
+            time.sleep(3.0)
+            resp = httpx.post(
+                f"{HARVEST_BASE}/time_entries",
+                headers=_headers(access_token),
+                json=payload,
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                entry = resp.json()
+                print(f"Harvest entry created (after 429 backoff): ID {entry['id']}")
+                return entry, None
 
         # If 422 "Task isn't assigned" and we have a task name, try to find the correct task
         if resp.status_code == 422 and task_name:

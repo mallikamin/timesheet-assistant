@@ -1267,6 +1267,58 @@ async def health(request: Request):
     }
 
 
+@app.get("/api/_diag/my-projects")
+async def diag_my_projects(request: Request):
+    """UAT diagnostic — list the projects + tasks the current user is
+    actually ASSIGNED to in Harvest (i.e. can log time against). Different
+    from /api/_diag/harvest which dumps the account-wide catalog of all
+    107 active projects.
+
+    Hits Harvest's /users/me/project_assignments endpoint with the user's
+    OAuth token. Tells you what to test the Approve flow against without
+    needing to add yourself to projects in the Harvest UI."""
+    user = get_current_user(request)
+    if not user:
+        return {"error": "not authenticated"}
+
+    harvest_token = request.session.get("harvest_token")
+    if not harvest_token:
+        return {"error": "no Harvest session token — connect Harvest first"}
+    valid_token = harvest_oauth.ensure_valid_token(harvest_token)
+    if not valid_token:
+        return {"error": "Harvest token expired and refresh failed — Sign Out → Sign In with Harvest"}
+    request.session["harvest_token"] = valid_token
+    access_token = valid_token["access_token"]
+
+    assignments = harvest_api.get_my_project_assignments(access_token)
+    out = []
+    for a in assignments:
+        proj = a.get("project") or {}
+        tasks = a.get("task_assignments") or []
+        out.append({
+            "project_id": proj.get("id"),
+            "project_name": proj.get("name"),
+            "project_code": proj.get("code"),
+            "client_name": (a.get("client") or {}).get("name"),
+            "is_billable": a.get("is_active"),
+            "task_count": len(tasks),
+            "tasks": [
+                {
+                    "task_id": (t.get("task") or {}).get("id"),
+                    "task_name": (t.get("task") or {}).get("name"),
+                    "billable": t.get("billable"),
+                }
+                for t in tasks
+            ],
+        })
+
+    return {
+        "user_email": user.get("email"),
+        "assigned_project_count": len(out),
+        "projects": out,
+    }
+
+
 @app.get("/api/_diag/harvest")
 async def diag_harvest(request: Request):
     """UAT diagnostic — dump the Harvest project cache state, force a fresh
