@@ -79,6 +79,35 @@
             font-size: 13px;
             opacity: 0.8;
         }
+        /* Inline Thrive PR wordmark — replaces the previously broken <img>
+           reference. Uses a web-safe italic bold sans serif so it renders
+           consistently without shipping a static asset. */
+        .brand-wordmark {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 4px;
+            background: #fff;
+            padding: 4px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            line-height: 1;
+        }
+        .brand-wordmark-text {
+            font-family: 'Figtree', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-style: italic;
+            font-weight: 800;
+            font-size: 22px;
+            color: #1a1a2e;
+            letter-spacing: -0.02em;
+        }
+        .brand-wordmark-pr {
+            font-family: 'Figtree', 'Inter', sans-serif;
+            font-weight: 700;
+            font-size: 11px;
+            color: #6c5ce7;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
 
         /* Harvest Banner */
         .harvest-banner {
@@ -697,10 +726,9 @@
 
 <div class="top-bar">
     <h1 style="gap:14px;">
-        <a href="/" style="display:inline-flex; align-items:center; background:#fff; padding:5px 12px; border-radius:6px; text-decoration:none;">
-            <img src="/static/thrive-logo.png" alt="thrive"
-                 onerror="this.onerror=null; this.src='/static/thrive-logo.svg';"
-                 style="height:24px; display:block;" />
+        <a href="/" class="brand-wordmark" aria-label="Thrive home">
+            <span class="brand-wordmark-text">thrive</span>
+            <span class="brand-wordmark-pr">PR</span>
         </a>
         <span style="font-size:13px; font-weight:500; opacity:0.7; padding-left:12px; border-left:1px solid #2a3050;">Timesheet Assistant</span>
     </h1>
@@ -1708,19 +1736,32 @@ What have you been up to?</div>
     // resume restores conversation context so an abandoned mid-flow
     // ("which project for Sydney WIP?") can be picked up where it stopped.
     async function loadTodayContext() {
+        // Always render a banner — the empty-state ("nothing on Harvest yet")
+        // confirms the feature is alive. Previously we returned silently when
+        // there were no entries, which made users think the feature was broken
+        // (Malik flagged this on 2026-05-06 — "where is that day-summary thing?").
         try {
             const res = await fetch('/api/today/summary');
             if (!res.ok) return;
             const data = await res.json();
-            if (!data.connected || !data.entries || data.entries.length === 0) return;
+            if (!data.authenticated) return;
+            if (!data.connected) {
+                addSystemMessage("Today's Harvest summary will appear here once you click 'Connect Harvest' above.");
+                return;
+            }
+            const entries = data.entries || [];
+            if (entries.length === 0) {
+                addSystemMessage("No time logged on Harvest yet today — what have you been working on?");
+                return;
+            }
             const total = data.total_hours || 0;
-            const lines = data.entries.slice(0, 6).map(e => {
+            const lines = entries.slice(0, 6).map(e => {
                 const project = e.project || e.client || '?';
                 const task = e.task || '';
                 const taskPart = task && task !== project ? ` / ${task}` : '';
                 return `• ${project}${taskPart} — ${e.hours}h`;
             });
-            const more = data.entries.length > 6 ? `\n…and ${data.entries.length - 6} more` : '';
+            const more = entries.length > 6 ? `\n…and ${entries.length - 6} more` : '';
             const txt = `Already logged ${total}h on Harvest today:\n${lines.join('\n')}${more}\nNew work to add?`;
             addSystemMessage(txt);
         } catch (err) {
