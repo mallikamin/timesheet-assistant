@@ -604,6 +604,53 @@
             letter-spacing: 0;
             font-size: 11px;
         }
+        /* Collapsible Drafts header (UAT 2026-05-07): clicking toggles
+           visibility so Approved becomes reachable without scrolling
+           through 19 drafts. State persisted in localStorage. */
+        .entry-section-header.collapsible {
+            cursor: pointer;
+            user-select: none;
+        }
+        .entry-section-header.collapsible:hover {
+            background: #f5f7fa;
+            color: #455a64;
+        }
+        .entry-section-header .esh-arrow {
+            display: inline-block;
+            width: 10px;
+            margin-right: 4px;
+            color: #b0bec5;
+            font-size: 9px;
+            transition: transform 120ms ease-out;
+        }
+        /* Sort bar above the entries list. Compact, single row, restores
+           the user's last-used sort on page load. */
+        .entry-sort-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 4px 8px 4px;
+            font-size: 11px;
+            color: #78909c;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .entry-sort-bar select {
+            flex: 1;
+            font-size: 12px;
+            padding: 3px 6px;
+            border: 1px solid #cfd8dc;
+            border-radius: 4px;
+            background: #fff;
+            color: #37474f;
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .entry-sort-bar select:focus {
+            outline: 2px solid #1a1a2e;
+            outline-offset: 1px;
+        }
         .entry-row {
             background: #f9fdf9;
             border: 1px solid #e8f0e8;
@@ -682,18 +729,22 @@
         .btn-confirm-delete.destructive:hover { background: #c62828; }
         .entry-actions {
             display: flex;
-            gap: 6px;
-            margin-top: 8px;
+            gap: 5px;
+            margin-top: 6px;
         }
+        /* Lean buttons (UAT 2026-05-07): tighter padding + smaller font so
+           draft cards take less vertical space and Approved section is
+           reachable without aggressive scrolling. */
         .btn-approve {
             background: #4caf50;
             color: white;
             border: none;
-            padding: 4px 12px;
+            padding: 3px 9px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 500;
             cursor: pointer;
+            line-height: 1.4;
         }
         .btn-approve:hover { background: #388e3c; }
         .btn-approve:disabled { background: #ccc; cursor: not-allowed; }
@@ -701,11 +752,12 @@
             background: #e3f2fd;
             color: #1565c0;
             border: 1px solid #bbdefb;
-            padding: 4px 12px;
+            padding: 3px 9px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 500;
             cursor: pointer;
+            line-height: 1.4;
         }
         .btn-edit-entry:hover { background: #bbdefb; }
         .btn-approve-all {
@@ -1034,6 +1086,40 @@ What have you been up to?</div>
     // Cached entries used by optimistic UI handlers (edit/cancel/delete)
     // so they can update the DOM in place without a full server round trip.
     let cachedEntries = [];
+
+    // --- Sort + collapsed state for the right panel ---
+    // localStorage-persisted so the user's preference survives a refresh.
+    // Default sort = entry-date descending (newest day first), which is
+    // what most reviewers want when scanning recent work.
+    const ENTRY_SORT_KEY = 'tl_entrySortMode';
+    const VALID_SORTS = ['date_desc', 'date_asc', 'created_desc', 'created_asc', 'hours_desc', 'hours_asc'];
+    let entrySortMode = localStorage.getItem(ENTRY_SORT_KEY);
+    if (!VALID_SORTS.includes(entrySortMode)) entrySortMode = 'date_desc';
+
+    const DRAFTS_COLLAPSED_KEY = 'tl_draftsCollapsed';
+    let draftsCollapsed = localStorage.getItem(DRAFTS_COLLAPSED_KEY) === '1';
+
+    // Stable sort. For created_*, falls back to id (uuid) when created_at
+    // is missing (in-memory entries); ensures deterministic order even
+    // without Supabase. Always returns a NEW array — does not mutate input.
+    function sortEntries(arr, mode) {
+        const ents = arr.slice();
+        const cmpStr = (a, b) => (a || '').localeCompare(b || '');
+        const cmpNum = (a, b) => Number(a || 0) - Number(b || 0);
+        const createdKey = (e) => e.created_at || e.id || '';
+        const cmp = (a, b) => {
+            switch (mode) {
+                case 'date_desc':    return cmpStr(b.date, a.date) || cmpStr(createdKey(b), createdKey(a));
+                case 'date_asc':     return cmpStr(a.date, b.date) || cmpStr(createdKey(a), createdKey(b));
+                case 'created_desc': return cmpStr(createdKey(b), createdKey(a));
+                case 'created_asc':  return cmpStr(createdKey(a), createdKey(b));
+                case 'hours_desc':   return cmpNum(b.hours, a.hours) || cmpStr(b.date, a.date);
+                case 'hours_asc':    return cmpNum(a.hours, b.hours) || cmpStr(a.date, b.date);
+                default:             return 0;
+            }
+        };
+        return ents.sort(cmp);
+    }
     // Map<entryId, originalActionsInnerHtml> — populated when edit mode opens,
     // consumed by cancelEdit to restore the action buttons without refetching.
     const editStash = new Map();
@@ -1337,22 +1423,73 @@ What have you been up to?</div>
         }
     }
 
+    // Sort selector above the entry list. Persists choice in localStorage.
+    function buildSortBar() {
+        const bar = document.createElement('div');
+        bar.className = 'entry-sort-bar';
+        const opts = [
+            ['date_desc',    'Date (newest first)'],
+            ['date_asc',     'Date (oldest first)'],
+            ['created_desc', 'Created (newest first)'],
+            ['created_asc',  'Created (oldest first)'],
+            ['hours_desc',   'Hours (high to low)'],
+            ['hours_asc',    'Hours (low to high)'],
+        ];
+        const optionsHtml = opts.map(([v, label]) =>
+            `<option value="${v}"${v === entrySortMode ? ' selected' : ''}>${label}</option>`
+        ).join('');
+        bar.innerHTML = `<label for="entrySortSelect">Sort</label>` +
+            `<select id="entrySortSelect" aria-label="Sort entries">${optionsHtml}</select>`;
+        bar.querySelector('select').addEventListener('change', (ev) => {
+            entrySortMode = ev.target.value;
+            try { localStorage.setItem(ENTRY_SORT_KEY, entrySortMode); } catch (e) {}
+            renderEntriesList();
+        });
+        return bar;
+    }
+
     // Split into pending (Draft / Needs Review) and approved sections.
     // Drafts stay full-size at the top \u2014 that's the actionable queue.
     // Approved collapses into a scannable list of one-line rows below.
+    // Drafts header is collapsible (UAT 2026-05-07): clicking toggles
+    // visibility so Approved remains reachable when many drafts pile up.
     function renderEntriesList() {
         entriesList.innerHTML = '';
-        const pending = cachedEntries.filter(e => e.status !== 'Approved');
-        const approved = cachedEntries.filter(e => e.status === 'Approved');
+        entriesList.appendChild(buildSortBar());
+        const pending = sortEntries(
+            cachedEntries.filter(e => e.status !== 'Approved'),
+            entrySortMode,
+        );
+        const approved = sortEntries(
+            cachedEntries.filter(e => e.status === 'Approved'),
+            entrySortMode,
+        );
 
         if (pending.length > 0) {
             const header = document.createElement('div');
-            header.className = 'entry-section-header';
+            header.className = 'entry-section-header collapsible';
             const totalHours = pending.reduce((sum, e) => sum + Number(e.hours || 0), 0);
-            header.innerHTML = `<span>Drafts</span><span class="ssh-meta">${pending.length} \u00b7 ${totalHours.toFixed(2)}h</span>`;
+            const arrow = draftsCollapsed ? '\u25b6' : '\u25bc';
+            header.innerHTML =
+                `<span><span class="esh-arrow" aria-hidden="true">${arrow}</span>Drafts</span>` +
+                `<span class="ssh-meta">${pending.length} \u00b7 ${totalHours.toFixed(2)}h</span>`;
+            header.setAttribute('role', 'button');
+            header.setAttribute('aria-expanded', String(!draftsCollapsed));
+            header.tabIndex = 0;
+            const toggle = () => {
+                draftsCollapsed = !draftsCollapsed;
+                try { localStorage.setItem(DRAFTS_COLLAPSED_KEY, draftsCollapsed ? '1' : '0'); } catch (e) {}
+                renderEntriesList();
+            };
+            header.addEventListener('click', toggle);
+            header.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+            });
             entriesList.appendChild(header);
-            for (const entry of pending) {
-                entriesList.appendChild(buildEntryCard(entry));
+            if (!draftsCollapsed) {
+                for (const entry of pending) {
+                    entriesList.appendChild(buildEntryCard(entry));
+                }
             }
         }
 
