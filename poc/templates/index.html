@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="server-today-iso" content="{{ today_iso }}">
     <title>Timesheet Assistant</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -980,8 +981,20 @@ What have you been up to?</div>
     const datePickerReset = document.getElementById('datePickerReset');
 
     function localTodayIso() {
-        // Build YYYY-MM-DD in the *browser's* local timezone, not UTC.
-        // toISOString() uses UTC and would be off-by-one for AU/NZ in the evening.
+        // Prefer the server-rendered "today" in the user's PROFILE timezone
+        // (AU/NZ for Thrive). The server reads user_profiles[email].dialect
+        // and computes today via time_utils.today_local — so a Thrive user
+        // viewing the app from any browser timezone gets the AU date the
+        // backend will use when saving the entry. Avoids the silent off-by-one
+        // testers in other timezones (e.g. Pakistan) used to see.
+        //
+        // Fall back to browser-local YYYY-MM-DD if the meta tag is missing
+        // (older cached pages, dev environments without the template var).
+        const meta = document.querySelector('meta[name="server-today-iso"]');
+        const isoFromMeta = meta && meta.getAttribute('content');
+        if (isoFromMeta && /^\d{4}-\d{2}-\d{2}$/.test(isoFromMeta)) {
+            return isoFromMeta;
+        }
         const d = new Date();
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');

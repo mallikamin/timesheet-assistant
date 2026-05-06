@@ -7,6 +7,7 @@ Google SSO authentication.
 import asyncio
 import json
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
@@ -539,12 +540,22 @@ def build_system_prompt(
         # AU/NZ users get the right "today" reference. Critical: the model
         # MUST treat this as authoritative over the cached block's date.
         local_today = time_utils.today_local(_user_dialect(user_email))
+        local_yesterday = local_today - timedelta(days=1)
+        local_tomorrow = local_today + timedelta(days=1)
         uncached_parts.append(
-            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block): "
+            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block, "
+            "NOT any date mentioned earlier in this conversation): "
             f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
-            "This is the user's local date in their timezone — when they say "
-            "'today', 'tomorrow', or 'yesterday', anchor those words to THIS "
-            "date, not to the cached block's date."
+            "This is the user's local date in their timezone. Hard rules:\n"
+            f"- When they say 'today' or 'now', the entry date MUST be {local_today.isoformat()}.\n"
+            f"- When they say 'yesterday', the entry date MUST be {local_yesterday.isoformat()}.\n"
+            f"- When they say 'tomorrow', the entry date MUST be {local_tomorrow.isoformat()}.\n"
+            "- A long resumed conversation may have referenced past or future dates "
+            "('Friday', 'next Tuesday', '12 May'). Those references are dead — they do NOT "
+            f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
+            "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
+            f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
+            f"with date={local_today.isoformat()}."
         )
     if notes:
         uncached_parts.extend(n for n in notes if n)
@@ -581,12 +592,22 @@ async def build_system_prompt_async(
         if profile_text:
             uncached_parts.append(profile_text)
         local_today = time_utils.today_local(_user_dialect(user_email))
+        local_yesterday = local_today - timedelta(days=1)
+        local_tomorrow = local_today + timedelta(days=1)
         uncached_parts.append(
-            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block): "
+            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block, "
+            "NOT any date mentioned earlier in this conversation): "
             f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
-            "This is the user's local date in their timezone — when they say "
-            "'today', 'tomorrow', or 'yesterday', anchor those words to THIS "
-            "date, not to the cached block's date."
+            "This is the user's local date in their timezone. Hard rules:\n"
+            f"- When they say 'today' or 'now', the entry date MUST be {local_today.isoformat()}.\n"
+            f"- When they say 'yesterday', the entry date MUST be {local_yesterday.isoformat()}.\n"
+            f"- When they say 'tomorrow', the entry date MUST be {local_tomorrow.isoformat()}.\n"
+            "- A long resumed conversation may have referenced past or future dates "
+            "('Friday', 'next Tuesday', '12 May'). Those references are dead — they do NOT "
+            f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
+            "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
+            f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
+            f"with date={local_today.isoformat()}."
         )
     if notes:
         uncached_parts.extend(n for n in notes if n)
@@ -1078,6 +1099,52 @@ def _format_harvest_entries_for_tool(entries: List[Dict]) -> str:
     return "\n".join(lines)
 
 
+_TODAY_KEYWORDS_RE = re.compile(r"\b(today|tonight|right now|just now|this morning|this afternoon|this evening|just did|just finished|currently)\b", re.IGNORECASE)
+
+
+def _clamp_entry_date_to_today(
+    tool_date: str,
+    user_message: Optional[str],
+    user_email: Optional[str],
+    selected_date: Optional[str],
+) -> Tuple[str, Optional[str]]:
+    """If the user message clearly said 'today' but the model emitted a
+    different date for the entry, override to the user's local today and
+    return the override reason for logging.
+
+    Why this exists: in long resumed chats the model drifts on what 'today'
+    means (Malik observed an entry for 'today' landing on Friday 8 May when
+    AU local was Thursday 7 May). The system prompt clamps strongly, but
+    a deterministic backend guard for the most common phrasing closes the
+    gap completely. We do NOT clamp when the user mentioned a specific
+    weekday or date — that's intentional drift, not an error."""
+    if not tool_date or not user_message:
+        return tool_date, None
+    if not _TODAY_KEYWORDS_RE.search(user_message):
+        return tool_date, None
+    # Don't override if the user ALSO mentioned a competing time anchor —
+    # 'this morning' + 'last Friday' is ambiguous, leave it to the model.
+    competing = re.search(
+        r"\b(yesterday|tomorrow|last (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+        r"next (week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+        r"(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?|"
+        r"\d{1,2}[ /-](jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))\b",
+        user_message,
+        re.IGNORECASE,
+    )
+    if competing:
+        return tool_date, None
+    expected_today = selected_date or _today_local_iso(user_email)
+    if tool_date == expected_today:
+        return tool_date, None
+    reason = (
+        f"clamped tool_date={tool_date} to today={expected_today} — user said "
+        f"'today' (keyword: '{_TODAY_KEYWORDS_RE.search(user_message).group(0)}') "
+        f"but model emitted a different date (likely chat-history drift)"
+    )
+    return expected_today, reason
+
+
 async def execute_tool(
     tool_name: str,
     tool_input: Dict,
@@ -1089,6 +1156,7 @@ async def execute_tool(
     user_name: Optional[str] = None,
     user_email: Optional[str] = None,
     selected_date: Optional[str] = None,
+    user_message: Optional[str] = None,
 ) -> str:
     """Execute a tool call and return the result string for Claude.
 
@@ -1212,7 +1280,15 @@ async def execute_tool(
             # selected_date (picker) → user's local today.
             tool_date = (tool_input.get("date") or "").strip()
             if tool_date:
-                entry_data["date"] = tool_date
+                clamped_date, clamp_reason = _clamp_entry_date_to_today(
+                    tool_date=tool_date,
+                    user_message=user_message,
+                    user_email=user_email,
+                    selected_date=selected_date,
+                )
+                if clamp_reason:
+                    print(f"[INFO] save_entry date clamp: {clamp_reason}")
+                entry_data["date"] = clamped_date
             saved = save_entry_everywhere(
                 user_name or "user",
                 entry_data,
@@ -1578,13 +1654,22 @@ async def home(request: Request):
     if not user:
         return RedirectResponse(url="/login")
     profile = user_profiles.get_profile(user.get("email", ""))
+    today_local_date = time_utils.today_local(profile.get("dialect"))
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "user": user,
             "users": PILOT_USERS,
-            "today": time_utils.today_local(profile.get("dialect")).strftime("%A, %d/%m/%Y"),
+            "today": today_local_date.strftime("%A, %d/%m/%Y"),
+            # ISO today is rendered into a <meta> tag so client-side JS can
+            # anchor the date-picker default + "is today?" comparisons to
+            # the user's PROFILE timezone (AU/NZ) instead of the browser's
+            # local timezone. Critical for testers in other timezones —
+            # e.g. Malik in Pakistan saw drafts land on AU's tomorrow
+            # because his browser-local picker said Thursday while the
+            # backend resolved "today" to Friday in AU.
+            "today_iso": today_local_date.isoformat(),
             # Hides the local-only Task Dashboard link on Render production —
             # without this guard the button rendered unconditionally and 404'd
             # on /dashboard for every pilot user (the planning routes only
@@ -1769,6 +1854,7 @@ async def chat(req: ChatRequest, request: Request):
                             user_name=req.user,
                             user_email=user.get("email", ""),
                             selected_date=req.selected_date,
+                            user_message=req.message,
                         )
 
                     tool_results.append({
@@ -1814,6 +1900,18 @@ async def chat(req: ChatRequest, request: Request):
     # picked up.
     created_entries: List[Dict] = list(tool_entries_sink)
     for entry_data in entries_data:
+        # Same "today" clamp as the tool-use path — protects the legacy
+        # text-emitted ENTRY block format from chat-history date drift.
+        if entry_data.get("date"):
+            clamped, reason = _clamp_entry_date_to_today(
+                tool_date=entry_data["date"],
+                user_message=req.message,
+                user_email=user.get("email", ""),
+                selected_date=req.selected_date,
+            )
+            if reason:
+                print(f"[INFO] ENTRY-block date clamp: {reason}")
+            entry_data["date"] = clamped
         entry = save_entry_everywhere(
             req.user,
             entry_data,
@@ -2070,6 +2168,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                                     user_name=req.user,
                                     user_email=user.get("email", ""),
                                     selected_date=req.selected_date,
+                                    user_message=req.message,
                                 )
                             tool_results.append({
                                 "type": "tool_result",
@@ -2094,6 +2193,16 @@ async def chat_stream(req: ChatRequest, request: Request):
             # text-block entries the parser picked up.
             created_entries: List[Dict] = list(tool_entries_sink)
             for entry_data in entries_data:
+                if entry_data.get("date"):
+                    clamped, reason = _clamp_entry_date_to_today(
+                        tool_date=entry_data["date"],
+                        user_message=req.message,
+                        user_email=user.get("email", ""),
+                        selected_date=req.selected_date,
+                    )
+                    if reason:
+                        print(f"[INFO] ENTRY-block date clamp (stream): {reason}")
+                    entry_data["date"] = clamped
                 entry = save_entry_everywhere(
                     req.user,
                     entry_data,

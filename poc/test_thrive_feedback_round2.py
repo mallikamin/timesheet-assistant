@@ -871,5 +871,125 @@ class PushErrorSurfacingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["client"], "Acuity")
 
 
+class TodayClampTests(unittest.TestCase):
+    """Backend safeguard against chat-history date drift.
+
+    Real production observation 2026-05-07: in a 34-message resumed chat
+    Malik typed "1h general admin today"; the AI emitted an ENTRY block
+    with date=2026-05-08 (Friday) instead of 2026-05-07 (Thursday). The
+    clamp fixes that deterministically before the entry is saved."""
+
+    def setUp(self):
+        from app import _clamp_entry_date_to_today
+        self.clamp = _clamp_entry_date_to_today
+
+    def test_clamps_when_user_says_today_but_model_drifted(self):
+        # User said "today" → entry MUST be 2026-05-07; AI gave 2026-05-08
+        clamped, reason = self.clamp(
+            tool_date="2026-05-08",
+            user_message="1h general admin today",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-07")
+        self.assertIsNotNone(reason)
+        self.assertIn("today", reason)
+
+    def test_no_clamp_when_user_explicitly_named_a_weekday(self):
+        # "tomorrow finance" — user wants tomorrow, not today
+        clamped, reason = self.clamp(
+            tool_date="2026-05-08",
+            user_message="tomorrow finance month-end work",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-08")
+        self.assertIsNone(reason)
+
+    def test_no_clamp_when_user_named_specific_date(self):
+        clamped, reason = self.clamp(
+            tool_date="2026-05-12",
+            user_message="annual leave on 12 may",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-12")
+        self.assertIsNone(reason)
+
+    def test_no_clamp_when_today_aligns(self):
+        # Model emitted today as expected — no override.
+        clamped, reason = self.clamp(
+            tool_date="2026-05-07",
+            user_message="1h general admin today",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-07")
+        self.assertIsNone(reason)
+
+    def test_no_clamp_when_no_today_keyword(self):
+        # User just gave hours — no time anchor at all. Trust the model.
+        clamped, reason = self.clamp(
+            tool_date="2026-05-08",
+            user_message="2h finance",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-08")
+        self.assertIsNone(reason)
+
+    def test_clamps_on_this_morning_phrasing(self):
+        # 'this morning' should anchor to today
+        clamped, reason = self.clamp(
+            tool_date="2026-05-08",
+            user_message="30 min on emails this morning",
+            user_email=None,
+            selected_date="2026-05-07",
+        )
+        self.assertEqual(clamped, "2026-05-07")
+        self.assertIsNotNone(reason)
+
+
+class TodayIsoMetaTagTests(unittest.TestCase):
+    """The frontend reads today from a <meta> tag so the date picker
+    matches the AU profile timezone, not the browser timezone. The route
+    handler must populate today_iso for the template."""
+
+    def test_template_has_meta_tag(self):
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        self.assertIn('name="server-today-iso"', src)
+        self.assertIn('{{ today_iso }}', src)
+
+    def test_localTodayIso_prefers_meta_tag(self):
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        # JS reads the meta tag before falling back to browser-local time.
+        self.assertIn('server-today-iso', src)
+        self.assertIn('isoFromMeta', src)
+
+
+class AuthoritativeTodayClampPromptTests(unittest.TestCase):
+    """The strengthened AUTHORITATIVE TODAY block must spell out
+    today/yesterday/tomorrow ISO dates and explicitly tell the model to
+    ignore conversation drift."""
+
+    def test_prompt_lists_explicit_iso_dates(self):
+        import app as app_mod
+        with patch.object(
+            app_mod, "get_all_projects_for_prompt", return_value="(no projects)"
+        ):
+            blocks = app_mod.build_system_prompt(user_email="hugh.preston@thrivepr.com.au")
+        joined = "\n".join(b["text"] for b in blocks)
+        # Hard rules section is present
+        self.assertIn("AUTHORITATIVE TODAY", joined)
+        self.assertIn("Hard rules", joined)
+        # Today + yesterday + tomorrow are spelled out as ISO
+        au_today = app_mod.time_utils.today_iso_local("en-AU-Sydney")
+        self.assertIn(au_today, joined)
+        # Drift defense
+        self.assertIn("dead", joined.lower())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
