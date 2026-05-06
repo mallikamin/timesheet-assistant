@@ -340,6 +340,63 @@ class ExecuteToolSaveEntryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["entry_date"], "2026-05-12")
 
 
+class HistoryTrimAndCacheTests(unittest.TestCase):
+    """Round-3 token-optimization helpers. Long conversations otherwise grow
+    unbounded and pay the full input cost on every turn."""
+
+    def test_trim_returns_unchanged_when_under_cap(self):
+        h = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}]
+        self.assertEqual(app_mod._trim_history(h), h)
+
+    def test_trim_drops_oldest_when_over_cap(self):
+        h = [{"role": "user", "content": str(i)} for i in range(50)]
+        out = app_mod._trim_history(h)
+        self.assertEqual(len(out), app_mod._MAX_HISTORY_MSGS)
+        # Newest 30 retained, oldest dropped.
+        self.assertEqual(out[0]["content"], "20")
+        self.assertEqual(out[-1]["content"], "49")
+
+    def test_trim_handles_empty_history(self):
+        self.assertEqual(app_mod._trim_history([]), [])
+
+    def test_cache_breakpoint_no_op_when_too_few_messages(self):
+        msgs = [{"role": "user", "content": "first turn"}]
+        app_mod._attach_messages_cache_breakpoint(msgs)
+        # Single message — nothing to cache, untouched.
+        self.assertEqual(msgs, [{"role": "user", "content": "first turn"}])
+
+    def test_cache_breakpoint_marks_second_to_last_string_message(self):
+        msgs = [
+            {"role": "user", "content": "older"},
+            {"role": "assistant", "content": "previous reply"},
+            {"role": "user", "content": "new turn"},
+        ]
+        app_mod._attach_messages_cache_breakpoint(msgs)
+        target = msgs[-2]
+        self.assertIsInstance(target["content"], list)
+        self.assertEqual(target["content"][0]["type"], "text")
+        self.assertEqual(target["content"][0]["text"], "previous reply")
+        self.assertEqual(target["content"][0]["cache_control"], {"type": "ephemeral"})
+        # The new user message stays uncached.
+        self.assertEqual(msgs[-1]["content"], "new turn")
+        # The older message is also untouched.
+        self.assertEqual(msgs[0]["content"], "older")
+
+    def test_cache_breakpoint_skips_list_content(self):
+        # Mid-tool-loop the assistant message is already a list of blocks
+        # (tool_use). Caching that is wasted work — the loop changes it
+        # between iterations.
+        msgs = [
+            {"role": "user", "content": "older"},
+            {"role": "assistant", "content": [{"type": "text", "text": "x"}]},
+            {"role": "user", "content": "new"},
+        ]
+        before = msgs[-2]["content"]
+        app_mod._attach_messages_cache_breakpoint(msgs)
+        # Untouched — no cache_control added because it was already a list.
+        self.assertEqual(msgs[-2]["content"], before)
+
+
 class _FakeRequest:
     """Minimal stand-in for a Starlette Request — chat() only touches .session."""
     def __init__(self, session):

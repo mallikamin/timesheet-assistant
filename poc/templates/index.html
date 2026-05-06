@@ -831,6 +831,41 @@ What have you been up to?</div>
     let conversationHistory = [];
     let isProcessing = false;
 
+    // --- Conversation persistence ---
+    // Hard refresh / dyno restart / Supabase pause shouldn't blow away the
+    // user's chat. localStorage gives us instant restore independent of the
+    // server. /api/chat/recent stays as the secondary path (other device,
+    // cleared cache, first time on this browser).
+    const HISTORY_STORAGE_KEY = `chat_history_v1_${currentUserName}`;
+    const HISTORY_STORAGE_CAP = 60;
+
+    function persistHistory() {
+        try {
+            const tail = conversationHistory.slice(-HISTORY_STORAGE_CAP);
+            localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(tail));
+        } catch (_) { /* quota / disabled — non-fatal */ }
+    }
+
+    function loadCachedHistory() {
+        try {
+            const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+            if (!raw) return [];
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) return [];
+            return arr.filter(
+                m => m && (m.role === 'user' || m.role === 'assistant')
+                     && typeof m.content === 'string' && m.content.length > 0
+            );
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function pushHistory(msg) {
+        pushHistory(msg);
+        persistHistory();
+    }
+
     // --- Date picker ---
     // Defaults to local "today". When the user changes it, every subsequent
     // chat message includes selected_date in the request body so the AI
@@ -1097,8 +1132,8 @@ What have you been up to?</div>
             bubble.textContent = finalResponse;
         }
 
-        conversationHistory.push({ role: 'user', content: text });
-        conversationHistory.push({ role: 'assistant', content: finalResponse || bubble.textContent });
+        pushHistory({ role: 'user', content: text });
+        pushHistory({ role: 'assistant', content: finalResponse || bubble.textContent });
 
         if (finalEntries.length > 0) {
             for (const entry of finalEntries) {
@@ -1139,8 +1174,8 @@ What have you been up to?</div>
         const data = await res.json();
         hideTyping();
 
-        conversationHistory.push({ role: 'user', content: text });
-        conversationHistory.push({ role: 'assistant', content: data.response });
+        pushHistory({ role: 'user', content: text });
+        pushHistory({ role: 'assistant', content: data.response });
 
         addMessage('assistant', data.response);
 
@@ -1297,11 +1332,11 @@ What have you been up to?</div>
             hideTyping();
 
             if (data.response) {
-                conversationHistory.push({
+                pushHistory({
                     role: 'user',
                     content: '[Pulled calendar events and asked for suggestions]'
                 });
-                conversationHistory.push({
+                pushHistory({
                     role: 'assistant',
                     content: data.response
                 });
@@ -1355,11 +1390,11 @@ What have you been up to?</div>
             hideTyping();
 
             if (data.response) {
-                conversationHistory.push({
+                pushHistory({
                     role: 'user',
                     content: '[Pulled Drive activity and asked for suggestions]'
                 });
-                conversationHistory.push({
+                pushHistory({
                     role: 'assistant',
                     content: data.response
                 });
@@ -1415,11 +1450,11 @@ What have you been up to?</div>
             hideTyping();
 
             if (data.response) {
-                conversationHistory.push({
+                pushHistory({
                     role: 'user',
                     content: '[Pulled email activity and asked for suggestions]'
                 });
-                conversationHistory.push({
+                pushHistory({
                     role: 'assistant',
                     content: data.response
                 });
@@ -1754,18 +1789,41 @@ What have you been up to?</div>
         }
     }
 
+    function renderRestoredMessages(msgs) {
+        // Render visible bubbles for restored messages so a hard refresh
+        // doesn't look like a fresh conversation. Don't double-add to
+        // conversationHistory — caller is responsible for that.
+        for (const m of msgs) {
+            if (m.role === 'user' || m.role === 'assistant') {
+                addMessage(m.role, m.content);
+            }
+        }
+    }
+
     async function resumeConversation() {
+        // Step 1: localStorage. Survives Render redeploys, Supabase pauses,
+        // and cold starts. Renders instantly with no server roundtrip.
+        const cached = loadCachedHistory();
+        if (cached.length > 0) {
+            renderRestoredMessages(cached);
+            conversationHistory = cached.slice();
+            addSystemMessage(`Picking up from your last session (${cached.length} messages restored).`);
+            return;
+        }
+
+        // Step 2: server fallback. Other device, cleared cache, or first
+        // time on this browser. Pull last 7 days, capped at 30 messages.
         try {
-            // Pull last 7 days, capped at 30 messages — enough to recover a
-            // mid-flow conversation Hugh started last week without dumping a
-            // month of stale chat into the model's context.
             const res = await fetch('/api/chat/recent?limit=30&days=7');
             if (!res.ok) return;
             const data = await res.json();
-            const msgs = (data.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
+            const msgs = (data.messages || []).filter(
+                m => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
+            );
             if (msgs.length === 0) return;
+            renderRestoredMessages(msgs);
             for (const m of msgs) {
-                conversationHistory.push({ role: m.role, content: m.content });
+                pushHistory({ role: m.role, content: m.content });
             }
             const days = data.days || 7;
             const range = days === 1 ? 'today' : `the last ${days} days`;

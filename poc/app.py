@@ -582,6 +582,49 @@ def _user_dialect(user_email: Optional[str]) -> Optional[str]:
         return None
 
 
+# Conversation-history budget. Each message is roughly 50-300 tokens; 30
+# messages = ~3-9K tokens of replayed context per turn. Beyond that we drop
+# the oldest pair (drop-oldest, no LLM summary). Clients also persist + send
+# their own slice — this is the server-side ceiling.
+_MAX_HISTORY_MSGS = 30
+
+
+def _trim_history(history: List[Dict]) -> List[Dict]:
+    """Cap conversation history sent to Anthropic. Drops oldest when over
+    budget so token cost stays bounded for long-running sessions."""
+    if not history:
+        return []
+    if len(history) <= _MAX_HISTORY_MSGS:
+        return list(history)
+    return list(history[-_MAX_HISTORY_MSGS:])
+
+
+def _attach_messages_cache_breakpoint(messages: List[Dict]) -> None:
+    """Mark the second-to-last message with an ephemeral cache breakpoint so
+    Anthropic caches the conversation prefix. Each subsequent turn within
+    the 5-minute TTL only pays for the new delta + the system-prompt cache hit.
+
+    Mutates messages in place. Safe to call when the prefix is too short to
+    actually cache — Anthropic silently ignores cache_control on
+    sub-threshold content. We use 1 of the 4 available breakpoints; the
+    system block uses another, leaving 2 spare."""
+    if len(messages) < 2:
+        return
+    target = messages[-2]
+    content = target.get("content")
+    if isinstance(content, str):
+        target["content"] = [
+            {
+                "type": "text",
+                "text": content,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    # If content is already a list of blocks (mid-tool-loop appends), don't
+    # touch it — those messages change between iterations and caching them
+    # is wasted work.
+
+
 _SELECTED_DATE_RE = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -1397,11 +1440,15 @@ async def chat(req: ChatRequest, request: Request):
             entries_created=[],
         )
 
-    # Build messages for Claude
+    # Build messages for Claude. Trim oldest history first (cap at 30 msgs)
+    # so a long-running session doesn't unbound the input cost.
     messages = []
-    for msg in req.history:
+    for msg in _trim_history(req.history):
         messages.append({"role": msg["role"], "content": msg["content"]})
     messages.append({"role": "user", "content": req.message})
+    # Cache the conversation prefix — 5-min ephemeral. Subsequent turns
+    # within the window read the cached prefix instead of re-billing it.
+    _attach_messages_cache_breakpoint(messages)
 
     # Check if Google token is available for tools
     google_token = request.session.get("google_token")
@@ -1704,9 +1751,14 @@ async def chat_stream(req: ChatRequest, request: Request):
         # === Setup phase — was previously OUTSIDE the generator ===
         setup_t0 = time.time()
         messages: List[Dict] = []
-        for msg in req.history:
+        for msg in _trim_history(req.history):
             messages.append({"role": msg["role"], "content": msg["content"]})
         messages.append({"role": "user", "content": req.message})
+        # Cache the conversation prefix — see _attach_messages_cache_breakpoint
+        # docstring. Stays in effect for all iterations of the agentic loop in
+        # this turn; on the next turn the cache prefix matches the prior turn's
+        # prefix + the new assistant turn, so the breakpoint moves naturally.
+        _attach_messages_cache_breakpoint(messages)
 
         google_token = request.session.get("google_token")
         has_google_access = False
