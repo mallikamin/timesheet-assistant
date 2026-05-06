@@ -2111,6 +2111,34 @@ async def chat_stream(req: ChatRequest, request: Request):
     )
 
 
+def _format_create_error(
+    client_name: str, task_name: str, resolved: Dict, err: Optional[Dict]
+) -> str:
+    """Build an error message for when name resolution succeeded but the
+    Harvest POST /time_entries call rejected the entry. The misleading
+    case is when both fail and we say 'could not resolve project' — here
+    we know resolution worked (we have the IDs), so the failure is on
+    Harvest's side and the user needs to know WHY."""
+    pid = resolved.get("project_id") if resolved else None
+    tid = resolved.get("task_id") if resolved else None
+    base = (
+        f"Resolved '{client_name}' / '{task_name}' to "
+        f"Harvest project_id={pid}, task_id={tid} — "
+        f"but Harvest rejected the time-entry create."
+    )
+    if not err:
+        return base + " No error details available; check Render logs."
+    status = err.get("status")
+    body = (err.get("body") or "").strip()
+    hint = err.get("hint") or "see Harvest response below"
+    lines = [base, f"Reason: {hint}"]
+    if status:
+        lines.append(f"Harvest status: {status}")
+    if body:
+        lines.append(f"Harvest body: {body[:300]}")
+    return "\n".join(lines)
+
+
 def _format_resolution_error(client_name: str, task_name: str, candidates: List) -> str:
     """Build an actionable error message when name resolution fails.
 
@@ -2215,7 +2243,7 @@ async def approve_all_entries(request: Request):
                 client_name, task_name, harvest_access_token
             )
             if diag["resolved"]:
-                harvest_entry = harvest_api.create_time_entry(
+                harvest_entry, create_err = harvest_api.create_time_entry_with_diag(
                     project_id=diag["resolved"]["project_id"],
                     task_id=diag["resolved"]["task_id"],
                     spent_date=entry.get("date", local_today_iso),
@@ -2225,7 +2253,11 @@ async def approve_all_entries(request: Request):
                     access_token=harvest_access_token,
                     task_name=task_name,
                 )
-            if not harvest_entry and not push_error:
+                if not harvest_entry and not push_error:
+                    push_error = _format_create_error(
+                        client_name, task_name, diag["resolved"], create_err
+                    )
+            elif not push_error:
                 push_error = _format_resolution_error(client_name, task_name, diag.get("candidates", []))
 
         if harvest_entry:
@@ -2419,7 +2451,11 @@ async def approve_entry(entry_id: str, request: Request):
             client_name, task_name, harvest_access_token
         )
         if diag["resolved"]:
-            harvest_entry = harvest_api.create_time_entry(
+            # Resolution succeeded — try the actual create with rich error
+            # capture so we surface the REAL Harvest rejection instead of
+            # falling back to "could not resolve" (which would be misleading
+            # because resolution worked).
+            harvest_entry, create_err = harvest_api.create_time_entry_with_diag(
                 project_id=diag["resolved"]["project_id"],
                 task_id=diag["resolved"]["task_id"],
                 spent_date=entry.get("date", local_today_iso),
@@ -2429,7 +2465,12 @@ async def approve_entry(entry_id: str, request: Request):
                 access_token=harvest_access_token,
                 task_name=task_name,
             )
-        if not harvest_entry and not push_error:
+            if not harvest_entry and not push_error:
+                push_error = _format_create_error(
+                    client_name, task_name, diag["resolved"], create_err
+                )
+        elif not push_error:
+            # Resolution itself failed — show the candidate-list message
             push_error = _format_resolution_error(client_name, task_name, diag.get("candidates", []))
 
     if not harvest_entry:

@@ -452,11 +452,47 @@ def create_time_entry(
     task_name: str = None,
 ) -> Optional[Dict]:
     """Create a time entry in Harvest.
-    Returns the Harvest entry dict with id, or None on failure.
-    If task_name is provided and the initial task_id fails, retries by looking up the correct task.
-    """
+
+    Returns the Harvest entry dict with id, or None on failure. Existing
+    callers expect Optional[Dict] — for callers that need the actual
+    Harvest error reason (status code + body), use
+    create_time_entry_with_diag() instead.
+
+    If task_name is provided and the initial task_id fails with 422
+    ('Task isn't assigned'), retries by looking up the correct task."""
+    entry, _err = create_time_entry_with_diag(
+        project_id=project_id,
+        task_id=task_id,
+        spent_date=spent_date,
+        hours=hours,
+        notes=notes,
+        user_id=user_id,
+        access_token=access_token,
+        task_name=task_name,
+    )
+    return entry
+
+
+def create_time_entry_with_diag(
+    project_id: int,
+    task_id: int,
+    spent_date: str,
+    hours: float,
+    notes: str = "",
+    user_id: int = None,
+    access_token: str = None,
+    task_name: str = None,
+) -> tuple:
+    """Like create_time_entry but returns (entry, error) where error is
+    None on success or a dict with {status, body, hint} on failure.
+
+    `hint` translates Harvest's status codes into actionable advice for
+    the user (e.g. 422 + 'task' in body → 'task not assigned to this
+    project for your user — ask an admin to add you to the project team
+    in Harvest'). Used by the Approve flow to surface the real reason
+    instead of the misleading 'could not resolve project' fallback."""
     if not is_configured() and not access_token:
-        return None
+        return None, {"status": None, "body": "no Harvest credentials available", "hint": "session not authenticated with Harvest"}
 
     try:
         payload = {
@@ -477,7 +513,7 @@ def create_time_entry(
         if resp.status_code in (200, 201):
             entry = resp.json()
             print(f"Harvest entry created: ID {entry['id']}")
-            return entry
+            return entry, None
 
         # If 422 "Task isn't assigned" and we have a task name, try to find the correct task
         if resp.status_code == 422 and task_name:
@@ -495,15 +531,44 @@ def create_time_entry(
                 if resp2.status_code in (200, 201):
                     entry = resp2.json()
                     print(f"Harvest entry created (retry): ID {entry['id']}")
-                    return entry
-                else:
-                    print(f"Harvest retry error: {resp2.status_code} {resp2.text[:200]}")
+                    return entry, None
+                resp = resp2  # surface the retry error if it still failed
 
-        print(f"Harvest create error: {resp.status_code} {resp.text[:200]}")
-        return None
+        body_text = (resp.text or "")[:500]
+        print(f"Harvest create error: {resp.status_code} {body_text}")
+        return None, {
+            "status": resp.status_code,
+            "body": body_text,
+            "hint": _harvest_create_error_hint(resp.status_code, body_text),
+        }
+    except httpx.TimeoutException:
+        print("Harvest create_time_entry timeout")
+        return None, {"status": None, "body": "timeout after 10s", "hint": "Harvest API didn't respond in 10s — try again, or check Harvest status page"}
     except Exception as e:
         print(f"Harvest create_time_entry error: {e}")
-        return None
+        return None, {"status": None, "body": repr(e), "hint": "unexpected error reaching Harvest API"}
+
+
+def _harvest_create_error_hint(status: int, body: str) -> str:
+    """Translate a Harvest API rejection into actionable user-facing text."""
+    body_lower = (body or "").lower()
+    if status == 401:
+        return "Harvest token is not authorised — Sign Out → Sign In with Harvest"
+    if status == 403:
+        return "Harvest says you don't have permission for this project — ask the Harvest admin to add you to the project team"
+    if status == 404:
+        return "project or task ID doesn't exist in Harvest (catalog may be stale — refresh data/harvest_master/ exports)"
+    if status == 422:
+        if "task" in body_lower and ("assign" in body_lower or "not been assigned" in body_lower):
+            return "the task isn't assigned to this project for your Harvest user — ask the Harvest admin to add you to the project team"
+        if "project" in body_lower and "archived" in body_lower:
+            return "this project is archived in Harvest — pick an active project"
+        return "Harvest validation rejected the entry — check the response body for the field name"
+    if status == 429:
+        return "Harvest rate limit hit — wait a minute and retry"
+    if status and 500 <= status < 600:
+        return "Harvest API is having issues right now — retry in a minute"
+    return "unexpected Harvest response — check Render logs for the full body"
 
 
 def patch_time_entry(
