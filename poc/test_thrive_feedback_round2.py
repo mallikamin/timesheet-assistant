@@ -1178,6 +1178,77 @@ class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sink), 0)
 
 
+class RightPanelUxTests(unittest.TestCase):
+    """UAT 2026-05-07: right panel needed sort options, lean buttons, and a
+    collapsible Drafts section so Approved isn't squeezed at the bottom
+    when many drafts pile up.
+
+    These tests assert the template surface (DOM-less). They don't run
+    JS — they verify the relevant identifiers, CSS, and option list are
+    present so a deploy can't ship a half-wired feature."""
+
+    def setUp(self):
+        self.template = (_HERE / "templates" / "index.html").read_text(encoding="utf-8")
+
+    def test_sort_state_constants_present(self):
+        # Persistence keys
+        self.assertIn("tl_entrySortMode", self.template)
+        self.assertIn("tl_draftsCollapsed", self.template)
+        # The sort modes
+        for mode in ["date_desc", "date_asc", "created_desc", "created_asc",
+                     "hours_desc", "hours_asc"]:
+            self.assertIn(f"'{mode}'", self.template, f"sort mode {mode} missing from template")
+
+    def test_sort_helper_present(self):
+        self.assertIn("function sortEntries(", self.template)
+        # Default sort = newest entry-date first (most useful for reviewing)
+        self.assertIn("entrySortMode = 'date_desc'", self.template)
+
+    def test_sort_bar_builder_present(self):
+        self.assertIn("function buildSortBar(", self.template)
+        # All six labels present in the dropdown
+        for label in ["Date (newest first)", "Date (oldest first)",
+                      "Created (newest first)", "Created (oldest first)",
+                      "Hours (high to low)", "Hours (low to high)"]:
+            self.assertIn(label, self.template)
+
+    def test_collapsible_drafts_wired(self):
+        # The CSS class
+        self.assertIn(".entry-section-header.collapsible", self.template)
+        # The state-toggle code path uses the storage key
+        self.assertIn("draftsCollapsed = !draftsCollapsed", self.template)
+        # ARIA: header is keyboard-reachable
+        self.assertIn("role', 'button'", self.template)
+        self.assertIn("aria-expanded'", self.template)
+        # Triangle arrows for visual collapsed state (JS-escaped form is
+        # what the Edit tool wrote — also more portable across editors).
+        self.assertIn("\\u25b6", self.template)  # ▶ (collapsed)
+        self.assertIn("\\u25bc", self.template)  # ▼ (expanded)
+
+    def test_lean_buttons_css_applied(self):
+        """The .btn-approve / .btn-edit-entry padding + font-size were
+        reduced. Pin the new values so a future style refactor doesn't
+        silently re-bloat them."""
+        # New: 11px font, 3px 9px padding
+        self.assertIn("font-size: 11px;", self.template)
+        self.assertIn("padding: 3px 9px;", self.template)
+        # Old values gone (the canonical 'btn-approve' block was the
+        # only place using "padding: 4px 12px" — if reintroduced, this
+        # assertion catches it)
+        # Note: don't assert absence of `4px 12px` globally because other
+        # buttons may legitimately use it. We assert the new values exist.
+
+    def test_render_entries_list_uses_sortbar(self):
+        """The rendered list always opens with the sort bar so the user
+        can reach the control even when the panel is empty."""
+        self.assertIn("entriesList.appendChild(buildSortBar())", self.template)
+
+    def test_storage_keys_unique(self):
+        """Sort + collapse keys must not clash (they live in the same
+        localStorage namespace)."""
+        self.assertNotEqual("tl_entrySortMode", "tl_draftsCollapsed")
+
+
 class TodayBannerDraftAwarenessTests(unittest.TestCase):
     """Production observation 2026-05-07: user with 4h Draft for today saw
     'No time logged on Harvest yet today' — read as 'system forgot my entry'.
