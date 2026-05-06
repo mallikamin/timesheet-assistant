@@ -1013,5 +1013,170 @@ class AuthoritativeTodayClampPromptTests(unittest.TestCase):
         self.assertIn("dead", joined.lower())
 
 
+class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
+    """Guard against the 2026-05-07 production observation: in a 42-message
+    resumed chat, the model wrote 'Drafted 4h on Thrive Operation / Reporting
+    & WIPs for today...' as plain text without calling save_entry. The right
+    panel stayed empty and the user thought the entry was lost.
+
+    The regex must:
+      - match 'Drafted 4h on ...' / 'Drafted 1h on ...' / 'Drafted 7.5 hours on ...'
+      - NOT match 'I drafted a press release for Acuity yesterday' (no number)
+      - NOT match 'Logged 4h' (different verb — that path doesn't claim a draft)
+
+    The recovery helper must, given a forced save_entry tool_use, populate
+    entries_sink and return a synthesized 'Drafted Nh on Client / Project for
+    YYYY-MM-DD ...' confirmation."""
+
+    def test_regex_matches_production_hallucination(self):
+        import app as app_mod
+        pat = app_mod._DRAFT_HALLUCINATION_RE
+        self.assertIsNotNone(pat.search(
+            "Drafted 4h on Thrive Operation / Reporting & WIPs for today — "
+            "approve in the right panel to push to Harvest."
+        ))
+        self.assertIsNotNone(pat.search("Drafted 1h on Project X for today."))
+        self.assertIsNotNone(pat.search("Drafted 7.5 hours on Annual Leave"))
+        self.assertIsNotNone(pat.search("drafting 0.75h on emails"))
+
+    def test_regex_rejects_non_hallucinations(self):
+        import app as app_mod
+        pat = app_mod._DRAFT_HALLUCINATION_RE
+        # Real "draft" usage that has nothing to do with time entries.
+        self.assertIsNone(pat.search("I drafted a press release for Acuity yesterday"))
+        # Different verb — not the hallucination pattern.
+        self.assertIsNone(pat.search("Logged 4h on Acuity"))
+        # Too far between draft and the number.
+        self.assertIsNone(pat.search(
+            "Drafted the press release. We covered a lot of ground today, including the 4h "
+            "mark of the brand campaign."
+        ))
+
+    async def test_recovery_forces_save_entry_and_synthesizes_confirmation(self):
+        """End-to-end: when the model hallucinates a draft, the recovery
+        helper runs a forced tool_choice=save_entry call, executes the
+        returned tool_use via execute_tool, and returns a 'Drafted Nh on
+        Client / Project for YYYY-MM-DD ...' confirmation. The entries_sink
+        is populated as a side-effect."""
+        import app as app_mod
+
+        # Hallucinated assistant turn — text only, no tool_use.
+        hallucinated = MagicMock()
+        hallucinated_block = MagicMock()
+        hallucinated_block.type = "text"
+        hallucinated_block.text = "Drafted 4h on Thrive Operation / Reporting & WIPs for today."
+        hallucinated.content = [hallucinated_block]
+
+        # Forced response — model emits a save_entry tool_use because
+        # tool_choice forces it.
+        forced = MagicMock()
+        tool_use_block = MagicMock()
+        tool_use_block.type = "tool_use"
+        tool_use_block.name = "save_entry"
+        tool_use_block.id = "toolu_recovery_1"
+        tool_use_block.input = {
+            "client": "Thrive Operation FY26",
+            "project_code": "",
+            "project_name": "Thrive Operation - Reporting & WIPs",
+            "task": "Thrive Operation - Reporting & WIPs",
+            "hours": 4.0,
+            "notes": "",
+            "date": "2026-05-07",
+            "status": "Draft",
+        }
+        forced.content = [tool_use_block]
+
+        async def fake_create(**kwargs):
+            # Recovery is called with tool_choice forcing save_entry.
+            self.assertEqual(
+                kwargs.get("tool_choice"),
+                {"type": "tool", "name": "save_entry"},
+            )
+            return forced
+
+        sink: list = []
+        with patch.object(app_mod.client.messages, "create", side_effect=fake_create), \
+             patch.object(app_mod, "_today_local_iso", return_value="2026-05-07"), \
+             patch.object(app_mod.harvest_mock, "create_draft_entry", return_value={
+                 "id": "draft-recover-1",
+                 "client": "Thrive Operation FY26",
+                 "project_code": "",
+                 "project_name": "Thrive Operation - Reporting & WIPs",
+                 "task": "Thrive Operation - Reporting & WIPs",
+                 "hours": 4.0,
+                 "notes": "",
+                 "date": "2026-05-07",
+                 "status": "Draft",
+             }), \
+             patch.object(app_mod.sheets_sync, "sync_entry_to_sheet", return_value=None):
+            recovered = await app_mod._recover_from_draft_hallucination(
+                last_response=hallucinated,
+                messages=[{"role": "user", "content": "4h general admin today"}],
+                system_blocks=[{"type": "text", "text": "system"}],
+                tools_param=[{"name": "save_entry"}],
+                access_token="",
+                harvest_access_token=None,
+                harvest_user_id=None,
+                user_dialect="en-AU-Sydney",
+                entries_sink=sink,
+                user_name="Malik Amin",
+                user_email="mallikamiin@gmail.com",
+                selected_date=None,
+                user_message="4h general admin today",
+            )
+
+        self.assertIsNotNone(recovered)
+        self.assertEqual(len(sink), 1)
+        self.assertEqual(sink[0]["hours"], 4.0)
+        self.assertIn("Drafted 4", recovered)
+        self.assertIn("Thrive Operation FY26", recovered)
+        self.assertIn("Thrive Operation - Reporting & WIPs", recovered)
+        self.assertIn("2026-05-07", recovered)
+        self.assertIn("right panel", recovered)
+
+    async def test_recovery_returns_none_when_forced_call_emits_no_tool_use(self):
+        """If the forced call somehow returns text-only despite tool_choice
+        (rare — would be an API regression), the recovery returns None so the
+        caller can surface a retry hint instead of leaking a wrong reply."""
+        import app as app_mod
+
+        hallucinated = MagicMock()
+        hallucinated_block = MagicMock()
+        hallucinated_block.type = "text"
+        hallucinated_block.text = "Drafted 4h on X for today."
+        hallucinated.content = [hallucinated_block]
+
+        # Forced response — but text-only, no tool_use (pathological).
+        forced = MagicMock()
+        text_only = MagicMock()
+        text_only.type = "text"
+        text_only.text = "I refuse"
+        forced.content = [text_only]
+
+        async def fake_create(**kwargs):
+            return forced
+
+        sink: list = []
+        with patch.object(app_mod.client.messages, "create", side_effect=fake_create):
+            recovered = await app_mod._recover_from_draft_hallucination(
+                last_response=hallucinated,
+                messages=[],
+                system_blocks=[{"type": "text", "text": "system"}],
+                tools_param=[{"name": "save_entry"}],
+                access_token="",
+                harvest_access_token=None,
+                harvest_user_id=None,
+                user_dialect=None,
+                entries_sink=sink,
+                user_name="Malik",
+                user_email="malik@example.com",
+                selected_date=None,
+                user_message="4h general admin today",
+            )
+
+        self.assertIsNone(recovered)
+        self.assertEqual(len(sink), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

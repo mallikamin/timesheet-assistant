@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "clamp-debug-2026-05-07d"
+BUILD_MARKER = "halluc-guard-2026-05-07e"
 
 
 @asynccontextmanager
@@ -1106,6 +1106,21 @@ def _format_harvest_entries_for_tool(entries: List[Dict]) -> str:
 
 _TODAY_KEYWORDS_RE = re.compile(r"\b(today|tonight|right now|just now|this morning|this afternoon|this evening|just did|just finished|currently)\b", re.IGNORECASE)
 
+# Matches assistant text that CLAIMS a draft was created without actually
+# calling save_entry. Production observation 2026-05-07: in long resumed
+# chats (40+ messages), the model mimics the prior assistant pattern and
+# writes "Drafted 4h on Thrive Operation / Reporting & WIPs for today —
+# approve in the right panel..." as plain text without invoking the tool.
+# The right panel stays empty, the user sees a draft confirmation, and
+# nothing was actually saved. This regex is intentionally narrow — it must
+# match BOTH "draft" + a duration to avoid catching legitimate uses of
+# "draft" (e.g. "I drafted a press release"). Used by the recovery guard
+# in /api/chat and /api/chat/stream.
+_DRAFT_HALLUCINATION_RE = re.compile(
+    r"\bdraft(?:ed|ing)?\b[\s\S]{0,40}?\b\d+(?:\.\d+)?\s*(?:h\b|hr|hour|min)",
+    re.IGNORECASE,
+)
+
 # Used to detect the user EXPLICITLY anchoring to a date other than today.
 # When this matches, the clamp stands down — the user genuinely meant a
 # different day. We deliberately match conservative phrasings only — "did
@@ -1160,6 +1175,104 @@ def _clamp_entry_date_to_today(
         f"selected_date={selected_date!r} ignored because user explicitly said 'today'."
     )
     return server_today, reason
+
+
+async def _recover_from_draft_hallucination(
+    *,
+    last_response,
+    messages: List[Dict],
+    system_blocks,
+    tools_param,
+    access_token: str,
+    harvest_access_token: Optional[str],
+    harvest_user_id: Optional[int],
+    user_dialect: Optional[str],
+    entries_sink: List[Dict],
+    user_name: Optional[str],
+    user_email: Optional[str],
+    selected_date: Optional[str],
+    user_message: Optional[str],
+) -> Optional[str]:
+    """Recover from the hallucination where the model writes 'Drafted X hours
+    on Y' in chat text WITHOUT calling save_entry.
+
+    Why this exists: in long resumed chats (Malik observed it on the 42-message
+    restored session, 2026-05-07), the model mimics the prior assistant
+    pattern and emits the confirmation text as if save_entry had been called
+    — but no tool fires, no entry saves, and the right panel stays empty.
+
+    Recovery: append the hallucinated assistant turn + a corrective user
+    message to the conversation, then force `tool_choice={"type": "tool",
+    "name": "save_entry"}` on a single follow-up call. Forcing tool_choice
+    guarantees the model emits a tool_use block (the API rejects text-only
+    completions in this mode). On success we populate entries_sink and
+    return a synthesized confirmation text the caller uses to replace the
+    hallucinated bubble. Returns None if recovery itself fails — the caller
+    keeps the original (broken) text and surfaces a retry hint."""
+    print(
+        f"[HALLUCINATION] model wrote draft confirmation without calling save_entry — "
+        f"forcing save_entry tool_choice. user_message={(user_message or '')[:120]!r}"
+    )
+    recovery_messages = list(messages)
+    recovery_messages.append({"role": "assistant", "content": last_response.content})
+    recovery_messages.append({
+        "role": "user",
+        "content": (
+            "Reminder: writing 'Drafted X hours on Y' in chat does NOT save the entry — "
+            "you must call the save_entry tool. Call save_entry now with the parameters "
+            "for the entry you just described to the user. Match the client / project_name "
+            "/ task / hours / date verbatim from your prior message. Do not write any text "
+            "before the tool call."
+        ),
+    })
+
+    api_kwargs = {
+        "model": CHAT_MODEL,
+        "max_tokens": 1024,
+        "system": system_blocks,
+        "messages": recovery_messages,
+    }
+    if tools_param:
+        api_kwargs["tools"] = tools_param
+        api_kwargs["tool_choice"] = {"type": "tool", "name": "save_entry"}
+
+    try:
+        forced = await client.messages.create(**api_kwargs)
+    except Exception as e:
+        print(f"[HALLUCINATION recovery FAILED] forced call: {type(e).__name__}: {str(e)[:200]}")
+        return None
+
+    sink_size_before = len(entries_sink)
+    for block in forced.content:
+        if getattr(block, "type", None) == "tool_use" and block.name == "save_entry":
+            try:
+                await execute_tool(
+                    tool_name=block.name,
+                    tool_input=block.input,
+                    access_token=access_token,
+                    harvest_access_token=harvest_access_token,
+                    harvest_user_id=harvest_user_id,
+                    user_dialect=user_dialect,
+                    entries_sink=entries_sink,
+                    user_name=user_name,
+                    user_email=user_email,
+                    selected_date=selected_date,
+                    user_message=user_message,
+                )
+            except Exception as e:
+                print(f"[HALLUCINATION recovery FAILED] execute_tool: {type(e).__name__}: {str(e)[:200]}")
+            break
+
+    if len(entries_sink) <= sink_size_before:
+        print("[HALLUCINATION recovery FAILED] forced call produced no save_entry tool_use")
+        return None
+
+    saved = entries_sink[-1]
+    return (
+        f"Drafted {saved.get('hours')}h on {saved.get('client')} / "
+        f"{saved.get('project_name')} for {saved.get('date')} — approve in the "
+        f"right panel to push to Harvest."
+    )
 
 
 async def execute_tool(
@@ -1926,6 +2039,39 @@ async def chat(req: ChatRequest, request: Request):
     # ```ENTRY block format. Tool-emitted entries are already in tool_entries_sink.
     display_text, entries_data = parse_entries_from_response(final_text)
 
+    # HALLUCINATION GUARD — model wrote "Drafted X h on Y" in text but never
+    # called save_entry. Force a save_entry call so the entry actually saves.
+    # See _recover_from_draft_hallucination docstring.
+    if (
+        not tool_entries_sink
+        and not entries_data
+        and display_text
+        and _DRAFT_HALLUCINATION_RE.search(display_text)
+        and response is not None
+    ):
+        recovered_text = await _recover_from_draft_hallucination(
+            last_response=response,
+            messages=messages,
+            system_blocks=system_blocks,
+            tools_param=tools_param,
+            access_token=access_token if has_google_access else "",
+            harvest_access_token=harvest_access_token,
+            harvest_user_id=harvest_user_id_for_tools,
+            user_dialect=user_dialect_for_tools,
+            entries_sink=tool_entries_sink,
+            user_name=req.user,
+            user_email=user.get("email", ""),
+            selected_date=req.selected_date,
+            user_message=req.message,
+        )
+        if recovered_text:
+            display_text = recovered_text
+        else:
+            display_text = (
+                "I tried to save that draft but it didn't go through — "
+                "please retry with the same wording. (Logged for the team.)"
+            )
+
     # Save chat messages to Supabase
     harvest_mock.save_chat_message(req.user, "user", req.message)
     harvest_mock.save_chat_message(req.user, "assistant", display_text)
@@ -2226,6 +2372,41 @@ async def chat_stream(req: ChatRequest, request: Request):
 
             full_text = "".join(final_text_parts)
             display_text, entries_data = parse_entries_from_response(full_text)
+
+            # HALLUCINATION GUARD — model wrote "Drafted X h on Y" in text but
+            # never called save_entry (or emitted a legacy ENTRY block). Force
+            # a save_entry call so the right panel actually updates.
+            # See _recover_from_draft_hallucination docstring.
+            if (
+                not tool_entries_sink
+                and not entries_data
+                and display_text
+                and _DRAFT_HALLUCINATION_RE.search(display_text)
+                and last_response is not None
+            ):
+                yield _sse({"type": "tool", "name": "save_entry"})
+                recovered_text = await _recover_from_draft_hallucination(
+                    last_response=last_response,
+                    messages=messages,
+                    system_blocks=system_blocks,
+                    tools_param=tools_param,
+                    access_token="",
+                    harvest_access_token=harvest_access_token,
+                    harvest_user_id=harvest_user_id_for_tools,
+                    user_dialect=user_dialect_for_tools,
+                    entries_sink=tool_entries_sink,
+                    user_name=req.user,
+                    user_email=user.get("email", ""),
+                    selected_date=req.selected_date,
+                    user_message=req.message,
+                )
+                if recovered_text:
+                    display_text = recovered_text
+                else:
+                    display_text = (
+                        "I tried to save that draft but it didn't go through — "
+                        "please retry with the same wording. (Logged for the team.)"
+                    )
 
             harvest_mock.save_chat_message(req.user, "user", req.message)
             harvest_mock.save_chat_message(req.user, "assistant", display_text)
