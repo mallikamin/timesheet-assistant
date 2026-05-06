@@ -2034,6 +2034,30 @@ What have you been up to?</div>
     // double-logging work they already pushed earlier in the day; the
     // resume restores conversation context so an abandoned mid-flow
     // ("which project for Sydney WIP?") can be picked up where it stopped.
+
+    // Counts unapproved drafts whose date matches the user's profile-tz today.
+    // Used by loadTodayContext() to disambiguate "nothing in Harvest yet" vs
+    // "you have drafts waiting for today" — the latter was reading as a
+    // system bug ("the entry I just logged disappeared"). Returns
+    // {count, hours} without throwing on network/parse failure.
+    async function countDraftsForLocalToday() {
+        try {
+            const todayIso = localTodayIso();
+            const user = encodeURIComponent(currentUserName);
+            const res = await fetch(`/api/entries/${user}`);
+            if (!res.ok) return { count: 0, hours: 0 };
+            const data = await res.json();
+            const drafts = (data.entries || []).filter(e =>
+                e.status !== 'Approved' && e.date === todayIso
+            );
+            const hours = drafts.reduce((sum, e) => sum + Number(e.hours || 0), 0);
+            return { count: drafts.length, hours: Math.round(hours * 100) / 100 };
+        } catch (err) {
+            console.warn('countDraftsForLocalToday failed (non-fatal):', err);
+            return { count: 0, hours: 0 };
+        }
+    }
+
     async function loadTodayContext() {
         // Always render a banner — the empty-state ("nothing on Harvest yet")
         // confirms the feature is alive. Previously we returned silently when
@@ -2050,7 +2074,23 @@ What have you been up to?</div>
             }
             const entries = data.entries || [];
             if (entries.length === 0) {
-                addSystemMessage("No time logged on Harvest yet today — what have you been working on?");
+                // Production observation 2026-05-07: user has drafts for
+                // today in the right panel but nothing approved/pushed —
+                // the previous "No time logged on Harvest yet today" copy
+                // read as "the system forgot my entry". Now we tell the
+                // truth (nothing in Harvest yet) AND surface the unapproved
+                // drafts for today so the user knows the system has them.
+                const draftsToday = await countDraftsForLocalToday();
+                if (draftsToday.count > 0) {
+                    const word = draftsToday.count === 1 ? 'draft' : 'drafts';
+                    addSystemMessage(
+                        `Nothing pushed to Harvest yet today. You have ${draftsToday.count} ${word} ` +
+                        `(${draftsToday.hours}h) for today in the right panel — Approve to push, or ` +
+                        `tell me what else you've worked on.`
+                    );
+                } else {
+                    addSystemMessage("No time logged on Harvest yet today — what have you been working on?");
+                }
                 return;
             }
             const total = data.total_hours || 0;

@@ -1178,6 +1178,31 @@ class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sink), 0)
 
 
+class TodayBannerDraftAwarenessTests(unittest.TestCase):
+    """Production observation 2026-05-07: user with 4h Draft for today saw
+    'No time logged on Harvest yet today' — read as 'system forgot my entry'.
+    Banner now distinguishes 'nothing in Harvest yet' from 'nothing in
+    Harvest yet but you have N drafts waiting'."""
+
+    def test_template_has_drafts_today_helper(self):
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        # The helper that counts today's drafts before deciding the banner copy.
+        self.assertIn("countDraftsForLocalToday", src)
+        # The new copy that surfaces the drafts (key phrase).
+        self.assertIn("Nothing pushed to Harvest yet today", src)
+        # The Approve CTA is in the new copy.
+        self.assertIn("Approve to push", src)
+
+    def test_template_keeps_clean_empty_state(self):
+        """When there are NO drafts AND nothing pushed, the original empty-
+        state copy still fires (the question prompt that gets the user
+        talking)."""
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        self.assertIn("No time logged on Harvest yet today", src)
+
+
 class DayNameDriftTests(unittest.TestCase):
     """Guard against the 2026-05-06 production observation (Michael UAT):
     model wrote 'Done! 1 hour logged for Thursday 06/05/2026 ...' while
