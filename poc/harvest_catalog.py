@@ -37,9 +37,12 @@ LEAVE_PROJECT_NAME = "Thrive Leave FY26"
 LEAVE_PROJECT_CODE = "3-0006"
 LEAVE_PROJECT_CLIENT = "Thrive PR"
 
-# Ordered by usage in the last 12 months. The "Leave - " prefix is the
-# Harvest convention — the AI must generate task names with this prefix
-# or the resolver substring-fallback will kick in.
+# Ordered by usage in the last 12 months (verified against /users/me/
+# project_assignments diagnostic 2026-05-06 — Maternity Leave was
+# missing from time-report data because no one logged it in the 12mo
+# window, but it's an active task assignment in Harvest). The "Leave - "
+# prefix is the Harvest convention — the AI must generate task names
+# with this prefix or the resolver substring-fallback will kick in.
 LEAVE_TASKS: Tuple[str, ...] = (
     "Leave - Annual Leave",
     "Leave - Public Holiday Leave",
@@ -50,6 +53,7 @@ LEAVE_TASKS: Tuple[str, ...] = (
     "Leave - Wellness Day Leave",
     "Leave - Compassionate Leave (paid)",
     "Leave - Compassionate Leave (unpaid)",
+    "Leave - Maternity Leave",
     "Leave - Jury Duty Leave",
 )
 
@@ -82,6 +86,9 @@ LEAVE_PHRASE_TO_TASK: Dict[str, str] = {
     "bereavement": "Leave - Compassionate Leave (paid)",
     "jury duty": "Leave - Jury Duty Leave",
     "jury": "Leave - Jury Duty Leave",
+    "maternity leave": "Leave - Maternity Leave",
+    "maternity": "Leave - Maternity Leave",
+    "parental leave": "Leave - Maternity Leave",
     "friday 4pm": "Leave - Friday 4pm Finish",
     "friday finish": "Leave - Friday 4pm Finish",
     "early friday": "Leave - Friday 4pm Finish",
