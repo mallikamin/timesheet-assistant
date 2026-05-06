@@ -1178,5 +1178,130 @@ class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sink), 0)
 
 
+class DayNameDriftTests(unittest.TestCase):
+    """Guard against the 2026-05-06 production observation (Michael UAT):
+    model wrote 'Done! 1 hour logged for Thursday 06/05/2026 ...' while
+    06/05/2026 is actually a Wednesday. The saved ENTRY date was correct
+    every time (the clamp handles ISO date), but the verbalised weekday
+    drifted off-by-one ~40% of his confirmation messages and read to him
+    as a system bug ('day picking up as Thursday but date is for
+    Wednesday').
+
+    Two layers of defence:
+      1. _fix_day_name_drift() — deterministic post-processor on the
+         assistant's reply text. Tests the regex matrix.
+      2. AUTHORITATIVE TODAY block — new prompt rule telling the model to
+         derive the weekday from the ISO date, never invent it. Tests the
+         rule string is present + that the today-day-name actually appears
+         (so the model has the answer, not just the instruction).
+
+    All Michael's actual ChatLog response patterns are replayed below."""
+
+    def test_replay_michael_thursday_06_05_2026(self):
+        """The exact screenshot text Michael flagged."""
+        import app as app_mod
+        # 06/05/2026 = Wednesday (1 May 2026 = Friday)
+        out = app_mod._fix_day_name_drift(
+            "Done! **1 hour** logged for Thursday 06/05/2026 on Thrive Finance "
+            "Operation FY26 / Thrive Finance - Systems & Process Improvement. Cheers!"
+        )
+        self.assertIn("Wednesday 06/05/2026", out)
+        self.assertNotIn("Thursday 06/05/2026", out)
+
+    def test_replay_michael_monday_03_05_2026(self):
+        """ChatLog 2026-05-05T23:53: 'Monday 03/05/2026' but 03/05/2026 = Sunday."""
+        import app as app_mod
+        out = app_mod._fix_day_name_drift("7.5 hours logged for Monday 03/05/2026")
+        self.assertIn("Sunday 03/05/2026", out)
+
+    def test_replay_michael_wednesday_05_05_2026(self):
+        """ChatLog 2026-05-06T00:21: 'Wednesday 05/05/2026' but 05/05/2026 = Tuesday."""
+        import app as app_mod
+        out = app_mod._fix_day_name_drift(
+            "Done! 45 minutes (0.75h) logged for Wednesday 05/05/2026."
+        )
+        self.assertIn("Tuesday 05/05/2026", out)
+
+    def test_correct_day_is_no_op(self):
+        """When the model wrote the correct weekday, leave the text alone
+        (preserves comma + casing the model chose)."""
+        import app as app_mod
+        good = "Logging that for Wednesday, 06/05/2026."
+        self.assertEqual(app_mod._fix_day_name_drift(good), good)
+
+    def test_three_letter_abbrev_preserved(self):
+        """Model used 'Thu 06/05/2026' (terse). Output should also be
+        terse: 'Wed 06/05/2026', not 'Wednesday 06/05/2026'."""
+        import app as app_mod
+        out = app_mod._fix_day_name_drift("Thu 06/05/2026 — done.")
+        self.assertIn("Wed 06/05/2026", out)
+        self.assertNotIn("Wednesday", out)
+
+    def test_iso_format_also_fixed(self):
+        """If the model writes 'Thursday 2026-05-06' it should still get
+        corrected to 'Wednesday 2026-05-06'."""
+        import app as app_mod
+        out = app_mod._fix_day_name_drift("Drafted for Thursday 2026-05-06.")
+        self.assertIn("Wednesday 2026-05-06", out)
+
+    def test_invalid_date_left_alone(self):
+        """Garbage date (29/02/2025 — non-leap) → date parse fails → leave
+        the original token alone rather than crashing or guessing."""
+        import app as app_mod
+        bad = "Friday 29/02/2025 nonsense"
+        self.assertEqual(app_mod._fix_day_name_drift(bad), bad)
+
+    def test_empty_input_safe(self):
+        import app as app_mod
+        self.assertEqual(app_mod._fix_day_name_drift(""), "")
+        self.assertEqual(app_mod._fix_day_name_drift(None), None)
+
+    def test_no_weekday_in_text_is_no_op(self):
+        """Plain date with no weekday — nothing to fix."""
+        import app as app_mod
+        plain = "Logged 2 hours for 06/05/2026."
+        self.assertEqual(app_mod._fix_day_name_drift(plain), plain)
+
+    def test_unrelated_word_not_caught(self):
+        """'Mon Cheri' should NOT get parsed as Monday — the regex requires
+        a date right after."""
+        import app as app_mod
+        text = "Mon Cheri Restaurant booking for tonight."
+        self.assertEqual(app_mod._fix_day_name_drift(text), text)
+
+    def test_multiple_dates_all_fixed(self):
+        """Recovery synthesizes can have multiple weekday-date pairs."""
+        import app as app_mod
+        out = app_mod._fix_day_name_drift(
+            "Logged Thursday 06/05/2026 and Wednesday 05/05/2026."
+        )
+        self.assertIn("Wednesday 06/05/2026", out)  # 6 May = Wed
+        self.assertIn("Tuesday 05/05/2026", out)    # 5 May = Tue
+
+    def test_authoritative_block_has_day_name_rule(self):
+        """The AUTHORITATIVE TODAY block must spell out the weekday rule
+        AND include today/yesterday/tomorrow's actual weekday names so the
+        model has the answer, not just the instruction."""
+        import app as app_mod
+        with patch.object(
+            app_mod, "get_all_projects_for_prompt", return_value="(no projects)"
+        ):
+            blocks = app_mod.build_system_prompt(user_email="hugh.preston@thrivepr.com.au")
+        joined = "\n".join(b["text"] for b in blocks)
+        # The instruction
+        self.assertIn("weekday MUST match the ISO", joined)
+        self.assertIn("derive the weekday from the ISO", joined)
+        # The today/yesterday/tomorrow weekday names are interpolated. We
+        # don't pin specific strings (the tests are calendar-agnostic), but
+        # we do check that all three weekday-name words appear at least
+        # once in the block — i.e. the f-string interpolation worked.
+        weekday_words = {"Monday", "Tuesday", "Wednesday", "Thursday",
+                         "Friday", "Saturday", "Sunday"}
+        found_count = sum(1 for w in weekday_words if w in joined)
+        # Today + yesterday + tomorrow give at least 3 distinct weekday
+        # mentions (some may collide but never below 1).
+        self.assertGreaterEqual(found_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "halluc-guard-2026-05-07e"
+BUILD_MARKER = "day-name-fix-2026-05-07f"
 
 
 @asynccontextmanager
@@ -560,7 +560,15 @@ def build_system_prompt(
             f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
             "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
             f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
-            f"with date={local_today.isoformat()}."
+            f"with date={local_today.isoformat()}.\n"
+            "- When you write a confirmation that includes a weekday alongside a date "
+            "(e.g. 'logged for Wednesday 06/05/2026'), the weekday MUST match the ISO "
+            f"date. Today {local_today.isoformat()} is {local_today.strftime('%A')}; "
+            f"yesterday {local_yesterday.isoformat()} is {local_yesterday.strftime('%A')}; "
+            f"tomorrow {local_tomorrow.isoformat()} is {local_tomorrow.strftime('%A')}. "
+            "For other dates, derive the weekday from the ISO string — never invent a "
+            "weekday or carry one over from earlier in the conversation. If unsure, "
+            "omit the weekday and write the date as DD/MM/YYYY only."
         )
     if notes:
         uncached_parts.extend(n for n in notes if n)
@@ -612,7 +620,15 @@ async def build_system_prompt_async(
             f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
             "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
             f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
-            f"with date={local_today.isoformat()}."
+            f"with date={local_today.isoformat()}.\n"
+            "- When you write a confirmation that includes a weekday alongside a date "
+            "(e.g. 'logged for Wednesday 06/05/2026'), the weekday MUST match the ISO "
+            f"date. Today {local_today.isoformat()} is {local_today.strftime('%A')}; "
+            f"yesterday {local_yesterday.isoformat()} is {local_yesterday.strftime('%A')}; "
+            f"tomorrow {local_tomorrow.isoformat()} is {local_tomorrow.strftime('%A')}. "
+            "For other dates, derive the weekday from the ISO string — never invent a "
+            "weekday or carry one over from earlier in the conversation. If unsure, "
+            "omit the weekday and write the date as DD/MM/YYYY only."
         )
     if notes:
         uncached_parts.extend(n for n in notes if n)
@@ -1120,6 +1136,68 @@ _DRAFT_HALLUCINATION_RE = re.compile(
     r"\bdraft(?:ed|ing)?\b[\s\S]{0,40}?\b\d+(?:\.\d+)?\s*(?:h\b|hr|hour|min)",
     re.IGNORECASE,
 )
+
+# Matches a weekday word followed by a date in DD/MM/YYYY (Australian) or
+# YYYY-MM-DD (ISO) form. Production observation 2026-05-06 (Michael UAT):
+# "Done! 1 hour logged for Thursday 06/05/2026 on Thrive Finance Operation
+# FY26 ..." — but 06/05/2026 (6 May) is a Wednesday, not Thursday. Across
+# Michael's session ~40% of his confirmation messages had a weekday-word /
+# ISO-date mismatch even though the SAVED ENTRY date was always correct
+# (the clamp guards that). The verbal mismatch reads to the user as a
+# system bug ('day picking up as Thursday but date is for Wednesday').
+# These regexes feed _fix_day_name_drift() which post-processes the
+# assistant's reply text after streaming.
+_DAY_DATE_DMY_RE = re.compile(
+    r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
+    r"|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)"
+    r"[\s,]+(\d{1,2}/\d{1,2}/\d{4})\b",
+    re.IGNORECASE,
+)
+_DAY_DATE_ISO_RE = re.compile(
+    r"\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
+    r"|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)"
+    r"[\s,]+(\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+
+
+def _fix_day_name_drift(text: str) -> str:
+    """Post-processor: ensure any 'Weekday DD/MM/YYYY' or 'Weekday YYYY-MM-DD'
+    in the assistant's reply has the correct weekday for that date.
+
+    Why: see _DAY_DATE_DMY_RE comment. The model occasionally hallucinates
+    the weekday word in its confirmation while the saved ISO date stays
+    correct. The verbal mismatch confuses users into thinking the system
+    saved the wrong day. This deterministic fix runs after the model
+    finishes — it doesn't slow perceived TTFT and only changes text when
+    there's an actual mismatch (so the common correct case is a no-op).
+
+    Preserves the model's abbreviation choice: 'Thu 06/05/2026' becomes
+    'Wed 06/05/2026', not 'Wednesday 06/05/2026' — keeps the reply terse
+    where the model meant terse."""
+    if not text:
+        return text
+
+    def _replace(match, date_format):
+        day_word = match.group(1)
+        date_str = match.group(2)
+        try:
+            d = datetime.strptime(date_str, date_format).date()
+        except ValueError:
+            return match.group(0)
+        correct = d.strftime("%A")
+        # Already correct? Preserve original formatting (commas, casing).
+        dl = day_word.lower()
+        if dl == correct.lower() or dl == correct[:3].lower():
+            return match.group(0)
+        # Preserve abbreviation length: 3-4 char input → 3-char output;
+        # full word input → full word output.
+        replacement = correct[:3] if len(day_word) <= 4 else correct
+        return f"{replacement} {date_str}"
+
+    text = _DAY_DATE_DMY_RE.sub(lambda m: _replace(m, "%d/%m/%Y"), text)
+    text = _DAY_DATE_ISO_RE.sub(lambda m: _replace(m, "%Y-%m-%d"), text)
+    return text
 
 # Used to detect the user EXPLICITLY anchoring to a date other than today.
 # When this matches, the clamp stands down — the user genuinely meant a
@@ -2072,6 +2150,11 @@ async def chat(req: ChatRequest, request: Request):
                 "please retry with the same wording. (Logged for the team.)"
             )
 
+    # DAY-NAME DRIFT FIX — see _fix_day_name_drift docstring. Production
+    # observation: model hallucinates the weekday word in confirmations
+    # while the saved ISO date stays correct.
+    display_text = _fix_day_name_drift(display_text)
+
     # Save chat messages to Supabase
     harvest_mock.save_chat_message(req.user, "user", req.message)
     harvest_mock.save_chat_message(req.user, "assistant", display_text)
@@ -2407,6 +2490,9 @@ async def chat_stream(req: ChatRequest, request: Request):
                         "I tried to save that draft but it didn't go through — "
                         "please retry with the same wording. (Logged for the team.)"
                     )
+
+            # DAY-NAME DRIFT FIX — see _fix_day_name_drift docstring.
+            display_text = _fix_day_name_drift(display_text)
 
             harvest_mock.save_chat_message(req.user, "user", req.message)
             harvest_mock.save_chat_message(req.user, "assistant", display_text)
