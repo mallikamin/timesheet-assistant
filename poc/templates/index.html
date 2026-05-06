@@ -380,12 +380,47 @@
             border-radius: 8px;
         }
         .chat-input-area {
-            padding: 16px 24px;
+            padding: 12px 24px 16px;
             border-top: 1px solid #eee;
             display: flex;
             gap: 8px;
             background: #fafafa;
+            flex-wrap: wrap;
         }
+        .chat-input-row {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+            align-items: center;
+        }
+        .date-picker-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #555;
+            width: 100%;
+            margin-bottom: 4px;
+        }
+        .date-picker-row label { font-weight: 500; }
+        .date-picker-row input[type="date"] {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            background: #fff;
+        }
+        .date-picker-reset {
+            background: transparent;
+            border: 0;
+            color: #2978f0;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 2px 6px;
+        }
+        .date-picker-reset:hover { text-decoration: underline; }
+        .date-picker-row.active label { color: #c2410c; }
+        .date-picker-row.active input[type="date"] { border-color: #f59e0b; background: #fff7ed; }
         .chat-input {
             flex: 1;
             padding: 12px 16px;
@@ -726,11 +761,19 @@ You can say things like:
 What have you been up to?</div>
         </div>
         <div class="chat-input-area">
-            <button class="btn btn-mic" id="micBtn" title="Click to speak">&#127908;</button>
-            <input type="text" class="chat-input" id="chatInput"
-                   placeholder="Tell me what you worked on..."
-                   autocomplete="off">
-            <button class="btn btn-send" id="sendBtn">Send</button>
+            <div class="date-picker-row" id="datePickerRow">
+                <label for="datePicker">Entry date:</label>
+                <input type="date" id="datePicker" />
+                <span id="datePickerHint">today</span>
+                <button type="button" class="date-picker-reset" id="datePickerReset" title="Reset to today">Reset</button>
+            </div>
+            <div class="chat-input-row">
+                <button class="btn btn-mic" id="micBtn" title="Click to speak">&#127908;</button>
+                <input type="text" class="chat-input" id="chatInput"
+                       placeholder="Tell me what you worked on... (Cmd/Ctrl+Enter to send)"
+                       autocomplete="off">
+                <button class="btn btn-send" id="sendBtn">Send</button>
+            </div>
         </div>
     </div>
 
@@ -787,6 +830,49 @@ What have you been up to?</div>
 
     let conversationHistory = [];
     let isProcessing = false;
+
+    // --- Date picker ---
+    // Defaults to local "today". When the user changes it, every subsequent
+    // chat message includes selected_date in the request body so the AI
+    // anchors entries to that date instead of guessing.
+    const datePicker = document.getElementById('datePicker');
+    const datePickerRow = document.getElementById('datePickerRow');
+    const datePickerHint = document.getElementById('datePickerHint');
+    const datePickerReset = document.getElementById('datePickerReset');
+
+    function localTodayIso() {
+        // Build YYYY-MM-DD in the *browser's* local timezone, not UTC.
+        // toISOString() uses UTC and would be off-by-one for AU/NZ in the evening.
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+    function refreshDatePickerHint() {
+        const today = localTodayIso();
+        if (!datePicker.value || datePicker.value === today) {
+            datePickerRow.classList.remove('active');
+            datePickerHint.textContent = 'today';
+        } else {
+            datePickerRow.classList.add('active');
+            const d = new Date(datePicker.value + 'T00:00:00');
+            const label = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+            datePickerHint.textContent = `${label} — entries will land on this date`;
+        }
+    }
+    datePicker.value = localTodayIso();
+    refreshDatePickerHint();
+    datePicker.addEventListener('change', refreshDatePickerHint);
+    datePickerReset.addEventListener('click', () => {
+        datePicker.value = localTodayIso();
+        refreshDatePickerHint();
+        chatInput.focus();
+    });
+    function getSelectedDate() {
+        const today = localTodayIso();
+        return (datePicker.value && datePicker.value !== today) ? datePicker.value : null;
+    }
 
     // Cached entries used by optimistic UI handlers (edit/cancel/delete)
     // so they can update the DOM in place without a full server round trip.
@@ -927,6 +1013,7 @@ What have you been up to?</div>
                 user: currentUserName,
                 message: text,
                 history: conversationHistory,
+                selected_date: getSelectedDate(),
             }),
         });
 
@@ -1003,7 +1090,8 @@ What have you been up to?</div>
         if (finalEntries.length > 0) {
             for (const entry of finalEntries) {
                 const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
-                addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+                const dateStr = entry.date || '';
+                addSystemMessage(`Drafted: ${hrs} on ${entry.project_name} (${dateStr}) — Approve to push to Harvest`);
             }
             refreshEntries();
         }
@@ -1020,6 +1108,7 @@ What have you been up to?</div>
                     user: currentUserName,
                     message: text,
                     history: conversationHistory,
+                    selected_date: getSelectedDate(),
                 }),
             });
         } catch (err) {
@@ -1045,7 +1134,8 @@ What have you been up to?</div>
         if (data.entries_created && data.entries_created.length > 0) {
             for (const entry of data.entries_created) {
                 const hrs = entry.hours === 1 ? '1 hour' : `${entry.hours} hours`;
-                addSystemMessage(`Logged: ${hrs} on ${entry.project_name} [${entry.status}]`);
+                const dateStr = entry.date || '';
+                addSystemMessage(`Drafted: ${hrs} on ${entry.project_name} (${dateStr}) — Approve to push to Harvest`);
             }
             refreshEntries();
         }
@@ -1361,12 +1451,13 @@ What have you been up to?</div>
                 addSystemMessage('Entry approved and pushed to Harvest.');
                 refreshEntries();
             } else {
-                addSystemMessage(`Approval failed: ${data.error || 'Unknown error'}`);
+                const ctx = data.client ? ` (${data.client} / ${data.task || ''})` : '';
+                addSystemMessage(`Could not push to Harvest${ctx}: ${data.error || 'Unknown error'}`);
                 if (btn) { btn.disabled = false; btn.textContent = 'Approve \u2192 Harvest'; }
             }
         } catch (err) {
             console.error('Failed to approve entry:', err);
-            addSystemMessage('Failed to approve entry. Please try again.');
+            addSystemMessage('Failed to approve entry \u2014 network or server error.');
             if (btn) { btn.disabled = false; btn.textContent = 'Approve \u2192 Harvest'; }
         }
     }
@@ -1384,11 +1475,17 @@ What have you been up to?</div>
             });
             const data = await res.json();
             if (data.success) {
-                const approved = data.results.filter(r => r.approved).length;
-                const failed = data.results.filter(r => !r.approved).length;
-                let msg = `${approved} ${approved === 1 ? 'entry' : 'entries'} approved and pushed to Harvest.`;
-                if (failed > 0) msg += ` ${failed} failed.`;
+                const okResults = data.results.filter(r => r.approved);
+                const failedResults = data.results.filter(r => !r.approved);
+                let msg = `${okResults.length} ${okResults.length === 1 ? 'entry' : 'entries'} approved and pushed to Harvest.`;
                 addSystemMessage(msg);
+                // Surface each failure with the specific Harvest reason so the
+                // user can fix the entry instead of guessing why "logged"
+                // entries didn't appear in their timesheet.
+                for (const r of failedResults) {
+                    const ctx = r.client ? ` (${r.client} / ${r.task || ''})` : '';
+                    addSystemMessage(`Could not push${ctx}: ${r.error || 'unknown reason'}`);
+                }
                 refreshEntries();
             }
         } catch (err) {
@@ -1557,9 +1654,17 @@ What have you been up to?</div>
     sendBtn.addEventListener('click', sendMessage);
 
     chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter (no modifiers) sends. Cmd+Enter / Ctrl+Enter also sends —
+        // requested by Hugh, who's used to that shortcut from other chat tools.
+        // Shift+Enter is reserved for newline (input is currently single-line
+        // but kept consistent so a future textarea Just Works).
+        if (e.key === 'Enter') {
+            const cmdOrCtrl = e.metaKey || e.ctrlKey;
+            if (e.shiftKey) return;
             e.preventDefault();
             sendMessage();
+            // cmdOrCtrl is treated the same as plain Enter — no separate handler.
+            void cmdOrCtrl;
         }
     });
 
@@ -1625,19 +1730,20 @@ What have you been up to?</div>
 
     async function resumeConversation() {
         try {
-            const res = await fetch('/api/chat/recent?limit=10');
+            // Pull last 7 days, capped at 30 messages — enough to recover a
+            // mid-flow conversation Hugh started last week without dumping a
+            // month of stale chat into the model's context.
+            const res = await fetch('/api/chat/recent?limit=30&days=7');
             if (!res.ok) return;
             const data = await res.json();
             const msgs = (data.messages || []).filter(m => m.role === 'user' || m.role === 'assistant');
             if (msgs.length === 0) return;
-            // Replay into history so the AI gets full context on next message.
             for (const m of msgs) {
                 conversationHistory.push({ role: m.role, content: m.content });
             }
-            // Visual marker so the user knows where today's earlier conversation
-            // ended — they don't see the actual messages replayed (would be
-            // noisy), just a hint that history is loaded.
-            addSystemMessage(`Picking up from earlier today (${msgs.length} messages restored to context).`);
+            const days = data.days || 7;
+            const range = days === 1 ? 'today' : `the last ${days} days`;
+            addSystemMessage(`Picking up from ${range} (${msgs.length} messages restored to context).`);
         } catch (err) {
             console.warn('chat resume failed (non-fatal):', err);
         }

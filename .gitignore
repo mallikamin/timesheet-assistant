@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 .env
 poc/data/entries.json
+poc/user_profiles.test.json
 *.egg-info/
 .venv/
