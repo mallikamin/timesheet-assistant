@@ -297,6 +297,34 @@
         }
         .wr-confirm-btn:hover { background: #2e7d32; }
         .wr-confirm-btn:disabled { background: #c8e6c9; border-color: #c8e6c9; cursor: default; }
+        /* Edit / Cancel / Show-all toggle for the per-event editor
+           (UAT 2026-05-07 — Tariq's "edit if AI is wrong" feedback) */
+        .wr-edit-btn {
+            font-size: 12px; padding: 4px 10px; border-radius: 4px;
+            border: 1px solid #bbdefb; background: #e3f2fd; color: #1565c0;
+            cursor: pointer;
+        }
+        .wr-edit-btn:hover { background: #bbdefb; }
+        .wr-cancel-btn {
+            font-size: 12px; padding: 4px 10px; border-radius: 4px;
+            border: 1px solid #cfd8dc; background: #eceff1; color: #455a64;
+            cursor: pointer;
+        }
+        .wr-cancel-btn:hover { background: #cfd8dc; }
+        .wr-editor {
+            display: flex; flex-direction: column; gap: 6px;
+            min-width: 260px;
+        }
+        .wr-editor-actions { display: flex; gap: 6px; }
+        .wr-show-all-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; color: #607d8b; cursor: pointer;
+        }
+        .wr-show-all-label input[type="checkbox"] { cursor: pointer; }
+        .wr-show-all-label input[type="checkbox"]:disabled { cursor: not-allowed; }
+        .wr-editor-hint {
+            font-size: 10px; color: #90a4ae; font-style: italic;
+        }
         .weekly-foot {
             padding: 14px 20px; border-top: 1px solid #eceff1;
             display: flex; justify-content: space-between; align-items: center;
@@ -2340,6 +2368,57 @@ What have you been up to?</div>
         weeklyData = null;
     }
 
+    // UAT 2026-05-07 (Tariq): the dropdown was rendering all 107 active
+    // projects; he asked to "limit to active projects" — already true server-
+    // side. Real intent: limit to projects the user is ASSIGNED to so the
+    // list is short and relevant. We keep the full list one toggle away in
+    // case the user does ad-hoc work on a project they're not formally
+    // assigned to. Persisted across renders within the modal session.
+    let weeklyShowAllProjects = false;
+
+    function buildOptionsHtml(candidates) {
+        const assigned = candidates.filter(c => c.is_assigned);
+        // If user has zero assigned projects (a fresh-OAuth case), default
+        // to showing all active rather than rendering an empty dropdown.
+        const useAll = weeklyShowAllProjects || assigned.length === 0;
+        const list = useAll ? candidates : assigned;
+        return list.map(c => {
+            const label = `${c.is_assigned ? '* ' : ''}${c.client} / ${c.task_name}`;
+            return `<option value="${c.code}" data-client="${escapeAttr(c.client)}" data-task="${escapeAttr(c.task_name)}">${escapeText(label)}</option>`;
+        }).join('');
+    }
+
+    function buildEditorBlock(dayIdx, evIdx, candidates) {
+        const optionsHtml = buildOptionsHtml(candidates);
+        const assignedCount = candidates.filter(c => c.is_assigned).length;
+        const totalCount = candidates.length;
+        const hint = (assignedCount === 0)
+            ? `(no assigned projects — showing all ${totalCount})`
+            : (weeklyShowAllProjects
+                ? `showing all ${totalCount}`
+                : `your ${assignedCount} assigned`);
+        const showAllChecked = weeklyShowAllProjects ? 'checked' : '';
+        const showAllDisabled = (assignedCount === 0) ? 'disabled' : '';
+        return `
+            <div class="wr-editor">
+                <select class="wr-select" data-day="${dayIdx}" data-ev="${evIdx}">
+                    <option value="">-- choose project --</option>
+                    ${optionsHtml}
+                </select>
+                <label class="wr-show-all-label">
+                    <input type="checkbox" class="wr-show-all" ${showAllChecked} ${showAllDisabled}
+                           data-action="toggle-show-all">
+                    Show all active projects
+                </label>
+                <span class="wr-editor-hint">${hint}</span>
+                <div class="wr-editor-actions">
+                    <button class="wr-confirm-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="confirm-pick">Save</button>
+                    <button class="wr-cancel-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="cancel-edit">Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
     function renderWeekly(data) {
         const { range, totals, days, candidates } = data;
         weeklyMeta.textContent = `${range.from} to ${range.to} - ${totals.events} events, ${totals.hours}h total`;
@@ -2350,14 +2429,8 @@ What have you been up to?</div>
             return;
         }
 
-        // Build a single project+task <select> options string used by every row's dropdown
-        const optionsHtml = candidates.map(c => {
-            const label = `${c.is_assigned ? '* ' : ''}${c.client} / ${c.task_name}`;
-            return `<option value="${c.code}" data-client="${escapeAttr(c.client)}" data-task="${escapeAttr(c.task_name)}">${escapeText(label)}</option>`;
-        }).join('');
-
         const dayBlocks = days.map((day, dayIdx) => {
-            const rows = day.events.map((ev, evIdx) => renderRow(ev, dayIdx, evIdx, optionsHtml)).join('');
+            const rows = day.events.map((ev, evIdx) => renderRow(ev, dayIdx, evIdx, candidates)).join('');
             return `
                 <div class="weekly-day">
                     <div class="weekly-day-head">
@@ -2372,10 +2445,16 @@ What have you been up to?</div>
         updateWeeklyStats();
     }
 
-    function renderRow(ev, dayIdx, evIdx, optionsHtml) {
+    function renderRow(ev, dayIdx, evIdx, candidates) {
         const dotClass = ev.confidence;
         const conf = ev.confidence;
-        const showDropdown = (conf === 'low' || conf === 'unknown') && !ev._approved;
+        // Auto-open the editor for low/unknown confidence (the AI doesn't
+        // have a confident pick) OR when the user explicitly clicked Edit
+        // on a high/medium row to override the AI suggestion.
+        const editing = (
+            !ev._approved &&
+            ((conf === 'low' || conf === 'unknown') || ev._editing)
+        );
         const attendees = (ev.attendees || []).slice(0, 3).join(', ');
         const titleBlock = `
             <span class="wr-title">${escapeText(ev.title || 'No title')}</span>
@@ -2393,16 +2472,16 @@ What have you been up to?</div>
         let actionsBlock;
         if (ev._approved) {
             actionsBlock = `<span style="color:#43a047; font-size:12px;">&#10003; Drafted</span>`;
-        } else if (showDropdown) {
-            actionsBlock = `
-                <select class="wr-select" data-day="${dayIdx}" data-ev="${evIdx}">
-                    <option value="">-- choose project --</option>
-                    ${optionsHtml}
-                </select>
-                <button class="wr-confirm-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="confirm-pick">Add</button>
-            `;
+        } else if (editing) {
+            actionsBlock = buildEditorBlock(dayIdx, evIdx, candidates);
         } else {
-            actionsBlock = `<button class="wr-confirm-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="confirm-suggested">Approve</button>`;
+            // High/medium confidence with no override yet — Approve plus
+            // Edit so the user can override an incorrect AI suggestion
+            // (Tariq feedback 2026-05-06).
+            actionsBlock = `
+                <button class="wr-confirm-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="confirm-suggested">Approve</button>
+                <button class="wr-edit-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="open-edit">Edit</button>
+            `;
         }
 
         const declined = ev.was_declined ? ' declined' : '';
@@ -2524,7 +2603,30 @@ What have you been up to?</div>
         const action = btn.getAttribute('data-action');
         if (action === 'confirm-suggested') confirmSuggested(dayIdx, evIdx);
         else if (action === 'confirm-pick') confirmPicked(dayIdx, evIdx);
+        else if (action === 'open-edit') openEdit(dayIdx, evIdx);
+        else if (action === 'cancel-edit') cancelEdit(dayIdx, evIdx);
     });
+
+    weeklyBody.addEventListener('change', (e) => {
+        const tgt = e.target.closest('input[data-action="toggle-show-all"]');
+        if (!tgt) return;
+        weeklyShowAllProjects = tgt.checked;
+        if (weeklyData) renderWeekly(weeklyData);
+    });
+
+    function openEdit(dayIdx, evIdx) {
+        const ev = findEvent(dayIdx, evIdx);
+        if (!ev || ev._approved) return;
+        ev._editing = true;
+        renderWeekly(weeklyData);
+    }
+
+    function cancelEdit(dayIdx, evIdx) {
+        const ev = findEvent(dayIdx, evIdx);
+        if (!ev) return;
+        ev._editing = false;
+        renderWeekly(weeklyData);
+    }
 
     function escapeText(s) {
         const d = document.createElement('div');

@@ -1178,6 +1178,108 @@ class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sink), 0)
 
 
+class CalendarEditActiveProjectsTests(unittest.TestCase):
+    """Tariq feedback (round 2): 'Can we have an Option to Edit if the
+    suggested Project is incorrect? And can that option be limited to only
+    Active Projects?'
+
+    Server side: the Harvest catalog is already filtered to is_active=true
+    (every harvest_api.get_projects call passes is_active=true). The real
+    intent of 'limit to active' was 'don't drown me in 107 projects' —
+    interpret as 'show my assigned projects by default, with a toggle to
+    expand to all active'.
+
+    Frontend changes:
+      - High/medium-confidence rows previously showed only Approve. Now
+        they show Approve + Edit. Edit opens an inline editor.
+      - The editor's dropdown is filtered to candidates where
+        is_assigned=true by default. A 'Show all active projects'
+        checkbox toggles to the full list (and is auto-disabled when the
+        user has zero assigned projects so we don't render an empty
+        dropdown).
+      - Cancel reverts."""
+
+    def setUp(self):
+        self.template = (_HERE / "templates" / "index.html").read_text(encoding="utf-8")
+
+    def test_edit_button_for_high_medium_rows(self):
+        """High/medium rows render an Edit button alongside Approve."""
+        # The data-action="open-edit" attribute fires the editor.
+        self.assertIn('data-action="open-edit"', self.template)
+        # The class for the Edit button (separate styling from Approve).
+        self.assertIn(".wr-edit-btn", self.template)
+
+    def test_editor_has_show_all_toggle(self):
+        """Show-all checkbox lets the user expand from assigned-only to
+        the full active catalogue."""
+        self.assertIn('class="wr-show-all"', self.template)
+        self.assertIn('Show all active projects', self.template)
+        # Toggle is wired to a state variable
+        self.assertIn("weeklyShowAllProjects", self.template)
+
+    def test_editor_default_filters_to_assigned(self):
+        """buildOptionsHtml filters to is_assigned by default. The exact
+        line that does the filter must be present so a refactor doesn't
+        silently revert this."""
+        self.assertIn("candidates.filter(c => c.is_assigned)", self.template)
+
+    def test_editor_falls_back_to_all_when_no_assigned(self):
+        """A fresh-OAuth user with zero assigned projects must NOT see an
+        empty dropdown — fall back to the full list AND disable the
+        toggle so the UI doesn't lie about its state."""
+        self.assertIn("assigned.length === 0", self.template)
+
+    def test_cancel_reverts_editor(self):
+        """Cancel button on the editor returns the row to Approve|Edit."""
+        self.assertIn('data-action="cancel-edit"', self.template)
+        self.assertIn("function cancelEdit(", self.template)
+
+    def test_open_edit_handler_wired(self):
+        """The open-edit click handler exists + sets _editing."""
+        self.assertIn("function openEdit(", self.template)
+        self.assertIn("ev._editing = true", self.template)
+
+    def test_correction_signal_preserved(self):
+        """When the user overrides the AI's suggestion via Edit + Save,
+        the postCategorize call must still send original_* so the user
+        profile records the correction (anti-repeat learning)."""
+        self.assertIn("original_client: ev.suggested_client", self.template)
+        self.assertIn("original_task_name: ev.suggested_task_name", self.template)
+
+    def test_categorize_endpoint_unchanged_contract(self):
+        """The /api/calendar/categorize endpoint expects
+        {event_id, event_date, event_title, event_duration_hours,
+         project_code, client, task_name, create_draft, original_client,
+         original_task_name}. We add the Edit UI without changing this
+        server contract — confirm the model is still in app.py."""
+        import app as app_mod
+        fields = set(app_mod.CategorizeRequest.model_fields.keys())
+        required = {
+            "event_id", "event_date", "event_title", "event_duration_hours",
+            "project_code", "client", "task_name", "create_draft",
+            "original_client", "original_task_name",
+        }
+        self.assertTrue(required.issubset(fields), f"Missing fields: {required - fields}")
+
+    def test_flatten_candidates_marks_assigned_correctly(self):
+        """Verify the server still flags is_assigned correctly so the
+        frontend filter has accurate input."""
+        import app as app_mod
+        with patch.object(app_mod, "get_projects", return_value=[
+            {"project": "Acuity X FY26", "tasks": [{"code": "9999-1234", "name": "Client - Planning"}]},
+            {"project": "Other Y FY26", "tasks": [{"code": "8888-5678", "name": "Client - Comms"}]},
+        ]):
+            result = app_mod._flatten_project_candidates(
+                harvest_access_token=None,
+                assigned_codes={"9999"},
+            )
+        codes = {(r["client"], r["is_assigned"]) for r in result}
+        self.assertIn(("Acuity X FY26", True), codes)
+        self.assertIn(("Other Y FY26", False), codes)
+        # Assigned projects sorted to the front
+        self.assertTrue(result[0]["is_assigned"])
+
+
 class RightPanelUxTests(unittest.TestCase):
     """UAT 2026-05-07: right panel needed sort options, lean buttons, and a
     collapsible Drafts section so Approved isn't squeezed at the bottom
