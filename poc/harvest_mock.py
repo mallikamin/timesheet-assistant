@@ -193,7 +193,14 @@ def save_chat_message(user: str, role: str, content: str, session_id: str = None
 
 
 def get_chat_history(user: str, session_id: str = None, limit: int = 50) -> List[Dict]:
-    """Get recent chat history for a user."""
+    """Get recent chat history for a user.
+
+    Returns up to `limit` messages in ascending chronological order
+    (oldest → newest) so callers can replay them as-is. We must order
+    DESC at the DB to slice off the *most recent* N rows — ordering
+    ASC + LIMIT N returns the N oldest rows ever recorded for the
+    user, which is never what the chat-resume path wants. Reverse
+    in Python to hand the caller the natural replay order."""
     sb = _get_client()
     if sb is None:
         return []
@@ -201,9 +208,11 @@ def get_chat_history(user: str, session_id: str = None, limit: int = 50) -> List
         query = sb.table("chat_logs").select("*").eq("user_name", user)
         if session_id:
             query = query.eq("session_id", session_id)
-        query = query.order("created_at", desc=False).limit(limit)
+        query = query.order("created_at", desc=True).limit(limit)
         result = query.execute()
-        return result.data or []
+        rows = list(result.data or [])
+        rows.reverse()
+        return rows
     except Exception as e:
         print(f"[WARN] get_chat_history failed: {e}")
         return []

@@ -548,6 +548,91 @@ class ChatRecentEndpointTests(unittest.TestCase):
         self.assertEqual(sig.parameters["days"].default, 1)
 
 
+class ChatHistoryOrderingTests(unittest.TestCase):
+    """Regression: get_chat_history must return the MOST RECENT N rows in
+    ascending chronological order. The first version ordered ASC at the DB
+    + LIMIT N, which silently returned the N OLDEST rows ever recorded for
+    the user — so chat resume on hard refresh always came back empty for any
+    user with more than `limit` total historical messages. UAT 2026-05-06."""
+
+    def _fake_supabase_with_rows(self, rows):
+        """Build a MagicMock that mimics the supabase-py fluent query chain
+        and asserts the order direction we requested. Returns (client, captured)
+        so the test can inspect what limit + desc were passed."""
+        captured = {}
+        result = MagicMock()
+        result.data = rows
+
+        query = MagicMock()
+        query.eq.return_value = query
+
+        def _order(col, desc=False):
+            captured["order_col"] = col
+            captured["desc"] = desc
+            return query
+        query.order.side_effect = _order
+
+        def _limit(n):
+            captured["limit"] = n
+            # Mimic Supabase: AFTER ordering DESC, take first N rows.
+            limited = MagicMock()
+            ordered = sorted(
+                result.data,
+                key=lambda r: r["created_at"],
+                reverse=captured.get("desc", False),
+            )
+            limited.execute.return_value = MagicMock(data=ordered[:n])
+            return limited
+        query.limit.side_effect = _limit
+
+        table = MagicMock()
+        table.select.return_value = query
+
+        client = MagicMock()
+        client.table.return_value = table
+        return client, captured
+
+    def test_returns_most_recent_when_history_exceeds_limit(self):
+        """The exact symptom Malik hit: 100 historical rows, ask for 30,
+        expect the 30 NEWEST in ascending order — not the 30 oldest."""
+        import harvest_mock
+        rows = [
+            {
+                "user_name": "Malik",
+                "role": "user" if i % 2 == 0 else "assistant",
+                "content": f"msg-{i:03d}",
+                "created_at": f"2026-05-{(i % 28) + 1:02d}T{(i % 24):02d}:00:00Z",
+            }
+            for i in range(100)
+        ]
+        # Sort the source rows so insertion order isn't accidentally relied on.
+        rows_shuffled = list(reversed(rows))
+
+        client, captured = self._fake_supabase_with_rows(rows_shuffled)
+        with patch("harvest_mock._get_client", return_value=client):
+            out = harvest_mock.get_chat_history("Malik", limit=30)
+
+        self.assertEqual(captured["desc"], True,
+                         "Must order DESC at the DB to slice the most recent N")
+        self.assertEqual(captured["limit"], 30)
+        self.assertEqual(len(out), 30)
+        # Returned in ASCENDING chronological order for replay.
+        timestamps = [r["created_at"] for r in out]
+        self.assertEqual(timestamps, sorted(timestamps),
+                         "Caller expects ascending order for replay")
+        # And those 30 must be the most-recent slice — none of the 70 oldest.
+        oldest_70_contents = {r["content"] for r in sorted(rows, key=lambda r: r["created_at"])[:70]}
+        for r in out:
+            self.assertNotIn(r["content"], oldest_70_contents,
+                             "Returned rows must come from the newest slice, not the oldest")
+
+    def test_returns_empty_when_supabase_unconfigured(self):
+        """Existing fail-safe: no client → empty list, no exception."""
+        import harvest_mock
+        with patch("harvest_mock._get_client", return_value=None):
+            self.assertEqual(harvest_mock.get_chat_history("anyone", limit=10), [])
+
+
 class PushErrorSurfacingTests(unittest.IsolatedAsyncioTestCase):
     """Verify approve/approve_all return the underlying Harvest error string,
     not just success: false."""
