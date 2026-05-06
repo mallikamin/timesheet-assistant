@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import sys
 import unittest
 from datetime import date, datetime, timedelta
@@ -1365,8 +1366,16 @@ class CalendarEditTemplateStructureTests(unittest.TestCase):
         a 'change' event listener, not a click listener."""
         self.assertIn("addEventListener('change'", self.template)
         self.assertIn('toggle-show-all', self.template)
-        # The change handler must read the checked state, not click.
-        change_section = self.template.split("addEventListener('change'", 1)[1].split("function ", 1)[0]
+        # Multiple change listeners exist (datepicker, sort dropdown, weekly).
+        # Find the one whose body references toggle-show-all and assert it
+        # reads `.checked` and re-renders the weekly view.
+        match = re.search(
+            r"addEventListener\('change',\s*\(e\)\s*=>\s*\{[^}]*toggle-show-all[^}]*\}",
+            self.template,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "no 'change' listener wraps toggle-show-all")
+        change_section = match.group(0)
         self.assertIn("tgt.checked", change_section)
         self.assertIn("renderWeekly(weeklyData)", change_section)
 
