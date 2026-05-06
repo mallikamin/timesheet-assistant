@@ -92,22 +92,39 @@ class SelectedDateNoteTests(unittest.TestCase):
 
 
 class ToolGatingTests(unittest.TestCase):
-    def test_no_connections_returns_none(self):
-        self.assertIsNone(app_mod._tools_for_user(False, False))
+    def test_no_connections_still_offers_save_entry(self):
+        # save_entry is always-on so users can draft even without Google or
+        # Harvest connected — drafts go to local DB + Sheet, push to Harvest
+        # happens at Approve time.
+        tools = app_mod._tools_for_user(False, False)
+        self.assertIsNotNone(tools)
+        self.assertEqual({t["name"] for t in tools}, {"save_entry"})
 
-    def test_only_google_returns_scan_tools(self):
+    def test_only_google_returns_scan_tools_plus_save(self):
         tools = app_mod._tools_for_user(True, False)
         names = {t["name"] for t in tools}
-        self.assertEqual(names, {"scan_emails", "scan_calendar", "scan_drive"})
+        self.assertEqual(
+            names, {"scan_emails", "scan_calendar", "scan_drive", "save_entry"}
+        )
 
-    def test_only_harvest_returns_entry_tools(self):
+    def test_only_harvest_returns_entry_tools_plus_save(self):
         tools = app_mod._tools_for_user(False, True)
         names = {t["name"] for t in tools}
-        self.assertEqual(names, {"list_entries", "delete_entry", "edit_entry"})
+        self.assertEqual(
+            names, {"list_entries", "delete_entry", "edit_entry", "save_entry"}
+        )
 
-    def test_both_returns_all_six(self):
+    def test_both_returns_all_seven(self):
         tools = app_mod._tools_for_user(True, True)
-        self.assertEqual(len(tools), 6)
+        names = {t["name"] for t in tools}
+        self.assertEqual(
+            names,
+            {
+                "scan_emails", "scan_calendar", "scan_drive",
+                "list_entries", "delete_entry", "edit_entry",
+                "save_entry",
+            },
+        )
 
 
 class ExecuteToolHarvestTests(unittest.IsolatedAsyncioTestCase):
@@ -188,6 +205,252 @@ class ExecuteToolHarvestTests(unittest.IsolatedAsyncioTestCase):
                 harvest_user_id=42,
             )
         self.assertIn("ERROR", out)
+
+
+class ExecuteToolSaveEntryTests(unittest.IsolatedAsyncioTestCase):
+    """The save_entry tool is the round-3 fix for Michael's 'logged but not
+    appearing as Draft' bug. The model previously had to remember to embed a
+    text-only ```ENTRY block — fragile, especially on the leave path. Tool
+    calls are structured + always reliable."""
+
+    async def test_save_entry_appends_to_sink_and_persists(self):
+        sink = []
+        with patch("app.harvest_mock.create_draft_entry") as create, \
+             patch("app.sheets_sync.sync_entry_to_sheet"):
+            create.return_value = {
+                "id": 7001,
+                "client": "Thrive Leave",
+                "project_name": "Annual Leave",
+                "task": "Annual Leave",
+                "hours": 7.5,
+                "notes": "Funeral",
+                "date": "2026-05-12",
+                "status": "Draft",
+            }
+            out = await app_mod.execute_tool(
+                "save_entry",
+                {
+                    "client": "Thrive Leave",
+                    "project_code": "",
+                    "project_name": "Annual Leave",
+                    "task": "Annual Leave",
+                    "hours": 7.5,
+                    "notes": "Funeral",
+                    "date": "2026-05-12",
+                    "status": "Draft",
+                },
+                access_token="g",
+                entries_sink=sink,
+                user_name="Michael",
+                user_email="michael@thrivepr.com.au",
+                selected_date="2026-05-12",
+            )
+        create.assert_called_once()
+        self.assertEqual(len(sink), 1)
+        self.assertEqual(sink[0]["id"], 7001)
+        self.assertIn("Drafted entry id=7001", out)
+        self.assertIn("Annual Leave", out)
+        # The result text instructs the model to use 'Drafted', not 'Logged'.
+        self.assertIn("Drafted", out)
+        self.assertIn("'Drafted', not 'Logged'", out)
+
+    async def test_save_entry_without_sink_returns_error(self):
+        # Defensive: a save_entry call outside a chat session has no sink and
+        # must NOT silently swallow the entry. Old behaviour was the model
+        # generating prose with no ENTRY block — that's exactly what we're
+        # fixing. Make the failure mode loud.
+        out = await app_mod.execute_tool(
+            "save_entry",
+            {
+                "client": "Acuity",
+                "project_name": "Existing Growth",
+                "task": "Existing Growth",
+                "hours": 1.0,
+                "date": "2026-05-06",
+            },
+            access_token="g",
+            entries_sink=None,
+            user_name="Michael",
+        )
+        self.assertIn("ERROR", out)
+        self.assertIn("entries_sink", out)
+
+    async def test_save_entry_rejects_zero_hours(self):
+        sink = []
+        out = await app_mod.execute_tool(
+            "save_entry",
+            {
+                "client": "Acuity",
+                "project_name": "Existing Growth",
+                "task": "Existing Growth",
+                "hours": 0,
+                "date": "2026-05-06",
+            },
+            access_token="g",
+            entries_sink=sink,
+        )
+        self.assertIn("ERROR", out)
+        self.assertEqual(sink, [])
+
+    async def test_save_entry_rejects_missing_project_name(self):
+        sink = []
+        out = await app_mod.execute_tool(
+            "save_entry",
+            {
+                "client": "Acuity",
+                "project_name": "",
+                "task": "Whatever",
+                "hours": 1.0,
+                "date": "2026-05-06",
+            },
+            access_token="g",
+            entries_sink=sink,
+        )
+        self.assertIn("ERROR", out)
+        self.assertEqual(sink, [])
+
+    async def test_save_entry_passes_picker_as_fallback_date(self):
+        # When the model emits date="" but the user picked a date, the picker
+        # should land on the entry. This is the second half of the round-3 fix
+        # (the first half being: tool always creates the draft).
+        sink = []
+        with patch("app.harvest_mock.create_draft_entry") as create, \
+             patch("app.sheets_sync.sync_entry_to_sheet"):
+            create.return_value = {
+                "id": 8001, "client": "Thrive Leave", "project_name": "Annual Leave",
+                "task": "Annual Leave", "hours": 7.5, "notes": "",
+                "date": "2026-05-12", "status": "Draft",
+            }
+            await app_mod.execute_tool(
+                "save_entry",
+                {
+                    "client": "Thrive Leave",
+                    "project_name": "Annual Leave",
+                    "task": "Annual Leave",
+                    "hours": 7.5,
+                    "date": "",  # model omitted; picker should win
+                },
+                access_token="g",
+                entries_sink=sink,
+                user_name="Michael",
+                user_email="michael@thrivepr.com.au",
+                selected_date="2026-05-12",
+            )
+        kwargs = create.call_args.kwargs
+        self.assertEqual(kwargs["entry_date"], "2026-05-12")
+
+
+class _FakeRequest:
+    """Minimal stand-in for a Starlette Request — chat() only touches .session."""
+    def __init__(self, session):
+        self.session = dict(session)
+
+
+def _stop_block(text):
+    """Build a minimal Anthropic content block for end_turn."""
+    b = MagicMock()
+    b.type = "text"
+    b.text = text
+    return b
+
+
+def _tool_use_block(name, input_dict, block_id="toolu_test_1"):
+    b = MagicMock()
+    b.type = "tool_use"
+    b.name = name
+    b.input = input_dict
+    b.id = block_id
+    return b
+
+
+def _fake_response(stop_reason, content_blocks):
+    """Mimic the bits of an Anthropic Message that chat() reads."""
+    r = MagicMock()
+    r.stop_reason = stop_reason
+    r.content = content_blocks
+    r.usage = MagicMock(input_tokens=10, output_tokens=5,
+                        cache_creation_input_tokens=0, cache_read_input_tokens=0)
+    return r
+
+
+class ChatEndpointSaveEntryE2ETests(unittest.IsolatedAsyncioTestCase):
+    """End-to-end test that covers the round-trip: chat() invokes the agentic
+    loop, the loop receives a save_entry tool_use from a (mocked) Claude, the
+    server creates a draft via save_entry_everywhere, the response surfaces
+    entries_created. The leave-path P0 bug from UAT 2.3 (silent draft loss)
+    fails this test in the OLD code path because the prose-only response
+    produced no draft."""
+
+    async def test_save_entry_tool_use_returns_entry_in_response(self):
+        # First Anthropic call → model emits a tool_use for save_entry.
+        # Second call (after tool_result) → model wraps with end_turn text.
+        first = _fake_response(
+            "tool_use",
+            [_tool_use_block(
+                "save_entry",
+                {
+                    "client": "Thrive Leave",
+                    "project_code": "",
+                    "project_name": "Annual Leave",
+                    "task": "Annual Leave",
+                    "hours": 7.5,
+                    "notes": "Funeral",
+                    "date": "2026-05-12",
+                    "status": "Draft",
+                },
+            )],
+        )
+        second = _fake_response(
+            "end_turn",
+            [_stop_block(
+                "Drafted 7.5h on Thrive Leave / Annual Leave for 12 May "
+                "— approve in the right panel to push to Harvest."
+            )],
+        )
+
+        # AsyncMock-style sequenced responses
+        async def _create(**_kwargs):
+            return _create.responses.pop(0)
+        _create.responses = [first, second]
+
+        fake_req = _FakeRequest({
+            "user": {"email": "michael@thrivepr.com.au", "name": "Michael"},
+            "google_token": None,
+            "harvest_token": None,
+        })
+
+        chat_req = app_mod.ChatRequest(
+            user="Michael",
+            message="7.5 hours Annual Leave for funeral",
+            history=[],
+            selected_date="2026-05-12",
+        )
+
+        with patch.object(app_mod.client.messages, "create", side_effect=_create), \
+             patch("app.harvest_mock.create_draft_entry") as create, \
+             patch("app.sheets_sync.sync_entry_to_sheet"), \
+             patch("app.harvest_mock.save_chat_message"), \
+             patch("app.training_log.log", return_value="iid-1"):
+            create.return_value = {
+                "id": 9001,
+                "client": "Thrive Leave",
+                "project_code": "",
+                "project_name": "Annual Leave",
+                "task": "Annual Leave",
+                "hours": 7.5,
+                "notes": "Funeral",
+                "date": "2026-05-12",
+                "status": "Draft",
+            }
+            resp = await app_mod.chat(chat_req, fake_req)
+
+        # The headline assertion: an entry was created and surfaces back to
+        # the frontend via entries_created. In the OLD code path (no tool,
+        # prose-only model output), this list was empty — exactly the bug.
+        self.assertEqual(len(resp.entries_created), 1)
+        self.assertEqual(resp.entries_created[0]["id"], 9001)
+        self.assertEqual(resp.entries_created[0]["project_name"], "Annual Leave")
+        self.assertIn("Drafted", resp.response)
 
 
 class HarvestPatchTests(unittest.TestCase):

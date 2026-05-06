@@ -1063,7 +1063,20 @@ What have you been up to?</div>
                     receivedAnyText = true;
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 } else if (payload.type === 'tool') {
-                    addSystemMessage(`Scanning your ${payload.name.replace('scan_', '')}...`);
+                    // Per-tool user-facing status. The default "Scanning your X..."
+                    // wording is fine for scan_emails/scan_calendar/scan_drive but
+                    // makes no sense for save_entry / list_entries / delete_entry /
+                    // edit_entry — those need their own copy.
+                    const toolStatus = {
+                        scan_emails: 'Scanning your emails...',
+                        scan_calendar: 'Scanning your calendar...',
+                        scan_drive: 'Scanning your drive...',
+                        list_entries: 'Looking up your entries...',
+                        delete_entry: 'Deleting that entry...',
+                        edit_entry: 'Updating that entry...',
+                        save_entry: 'Drafting that entry...',
+                    }[payload.name] || `Working on ${payload.name}...`;
+                    addSystemMessage(toolStatus);
                 } else if (payload.type === 'done') {
                     finalResponse = payload.response;
                     finalEntries = payload.entries_created || [];

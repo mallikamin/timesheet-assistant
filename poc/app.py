@@ -296,29 +296,31 @@ Disambiguation list rules (CRITICAL — production observation: long lists cause
 - When the user replies to a numbered list with what looks like a NEW topic ("Thrive admin" after you asked which project for Sydney WIP), DO NOT silently treat it as a fresh entry. First confirm: "Was that for the Sydney WIP I asked about, or a separate item?"
 - When you ask "which task under Project X?" and the user replies with the name of a different project, ask once: "Did you mean a task under [different project] instead of [original project]?" before reframing the entry.
 
-When you're ready to log an entry, include this exact JSON format in your response (the system will parse it):
-```ENTRY
-{{{{
-  "client": "Project Name",
-  "project_code": "TASK-CODE",
-  "project_name": "Task Name",
-  "task": "Task Name",
-  "hours": 1.5,
-  "notes": "Description of work done",
-  "date": "YYYY-MM-DD",
-  "status": "Draft"
-}}}}
-```
+When you're ready to log an entry, ALWAYS call the `save_entry` tool. Do NOT just write
+"Drafted X hours on Y" in chat — text alone does NOT create the draft and the user will
+think it's logged when it isn't (this was Michael's #1 complaint in production). The tool
+applies to regular work, internal admin, and EVERY kind of leave (annual / sick / carer /
+compassionate / funeral / unpaid / TIL).
 
-Field mapping:
-- "client" = the project name (e.g. "Acuity", "Afterpay")
-- "project_code" = the task code (e.g. "6-1000", "2-1099")
-- "project_name" = the task name (e.g. "Existing Business Growth FY26")
-- "task" = same as project_name for now
+After the tool returns, write a short user-facing reply confirming the draft, e.g.
+"Drafted 7.5h on Thrive Leave / Annual Leave for 12 May — approve in the right panel
+to push to Harvest." Use the word "Drafted", never "Logged".
 
-If confidence is low, set status to "Needs Review" instead of "Draft".
+Field mapping for save_entry:
+- "client" = the project name (e.g. "Acuity", "Afterpay", "Thrive Leave", "Thrive Operation FY26")
+- "project_code" = the task code (e.g. "6-1000", "2-1099") — empty string is fine when unknown
+- "project_name" = the task name (e.g. "Existing Business Growth FY26", "Annual Leave")
+- "task" = same as project_name
+- "hours" = numeric, minimum 0.08 (5 min); a full leave day = 7.5
+- "date" = YYYY-MM-DD; see Date handling below
+- "status" = "Draft" by default; "Needs Review" only when confidence is low
 
-You can log multiple entries in one response — just include multiple ```ENTRY blocks.
+You can call save_entry multiple times in one turn for multi-task days — one tool call per entry.
+
+LEGACY FALLBACK ONLY (do not use unless you cannot call tools): the same JSON shape can
+be embedded as a ```ENTRY ... ``` block in your text and the server will parse it. The
+tool path is strictly preferred — it works every time and the legacy parser exists only
+for backward compatibility with older clients.
 
 Available tools:
 You have access to these tools to scan the user's Google Workspace data:
@@ -595,12 +597,17 @@ def _selected_date_note(selected: str) -> str:
     except ValueError:
         return ""
     return (
-        "USER-SELECTED DATE (highest priority — overrides 'today/yesterday/tomorrow' "
-        f"phrases in the user's message): {d.strftime('%A, %d/%m/%Y')} ({d.isoformat()}). "
-        "Treat this as the authoritative date for any entry the user describes "
-        "in their next message UNLESS they explicitly state a different date in "
-        "the message itself. If their message already specifies a date, follow "
-        "the message's date — the picker is only the default, not a lock."
+        "USER-SELECTED DATE (highest priority for the `date` field of save_entry): "
+        f"{d.strftime('%A, %d/%m/%Y')} ({d.isoformat()}).\n"
+        "Resolution order for entry dates:\n"
+        f"  1. If the user's message contains an explicit date phrase (a specific date like "
+        f"'12 May', a day name like 'Monday', or a relative phrase like 'yesterday' / "
+        f"'tomorrow' / 'last Tuesday'), use that.\n"
+        f"  2. Otherwise — including when the message has NO date phrase at all "
+        f"(e.g. '7.5h annual leave', '1h Acuity strategy', 'log emails 30 min') — "
+        f"use the USER-SELECTED DATE: {d.isoformat()}. Do NOT fall back to "
+        f"AUTHORITATIVE TODAY in this case; the picker overrides today.\n"
+        f"  3. AUTHORITATIVE TODAY is the fallback only when there is no picker selection."
     )
 
 
@@ -876,6 +883,63 @@ TOOLS = [
             "required": ["harvest_id"],
         },
     },
+    {
+        "name": "save_entry",
+        "description": (
+            "Create a Draft time entry. ALWAYS use this tool when the user asks you to log time — "
+            "regular work, internal admin, AND every kind of leave (annual, sick, carer, "
+            "compassionate, funeral, unpaid, TIL). The entry lands as a Draft card in the user's "
+            "right panel; they click Approve to push it to Harvest. "
+            "DO NOT just write 'Drafted X hours on Y' in chat without calling this tool — text "
+            "alone does NOT create the draft and the user will think it's logged when it isn't. "
+            "On success the tool returns the saved entry's id and you can write a short user-facing "
+            "confirmation."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "type": "string",
+                    "description": "Project / client name (e.g. 'Acuity', 'Thrive Leave', 'Thrive Operation FY26').",
+                },
+                "project_code": {
+                    "type": "string",
+                    "description": "Harvest task code if known (e.g. '6-1000', '22812095'). Empty string if unknown.",
+                },
+                "project_name": {
+                    "type": "string",
+                    "description": "Task name (e.g. 'Existing Business Growth FY26', 'Annual Leave', 'Reporting & WIPs').",
+                },
+                "task": {
+                    "type": "string",
+                    "description": "Task name. For now, use the same value as project_name.",
+                },
+                "hours": {
+                    "type": "number",
+                    "description": "Hours to log. Minimum 0.08 (5 min). Full-day leave = 7.5.",
+                },
+                "notes": {
+                    "type": "string",
+                    "description": "Short description of work done (e.g. 'Funeral', 'Inbox triage', 'Strategy session').",
+                },
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "Date in YYYY-MM-DD format. Priority order: (1) explicit date in user's message, "
+                        "(2) USER-SELECTED DATE from runtime notes if present, (3) AUTHORITATIVE TODAY. "
+                        "Never default to today when the user has set a picker date and their message has "
+                        "no date phrase."
+                    ),
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["Draft", "Needs Review"],
+                    "description": "Draft for confident entries, Needs Review when project/task confidence is low.",
+                },
+            },
+            "required": ["client", "project_name", "task", "hours", "date"],
+        },
+    },
 ]
 
 MAX_TOOL_ITERATIONS = 5
@@ -884,16 +948,26 @@ MAX_TOOL_ITERATIONS = 5
 # what the user has connected. Keep these in sync with the TOOLS list above.
 _GOOGLE_TOOL_NAMES = {"scan_emails", "scan_calendar", "scan_drive"}
 _HARVEST_TOOL_NAMES = {"list_entries", "delete_entry", "edit_entry"}
+# save_entry is always available when the user is logged in — drafting works
+# without Harvest connection (drafts go to Supabase + Sheet); only the Approve
+# step requires Harvest. Putting it in its own bucket so the gating helper can
+# include it unconditionally.
+_ALWAYS_ON_TOOL_NAMES = {"save_entry"}
 
 
 def _tools_for_user(has_google: bool, has_harvest: bool) -> Optional[List[Dict]]:
     """Build the per-request tools list. Hides tools the user can't use so
     the model doesn't try to call them and burn a tool-loop iteration on an
-    ERROR result."""
+    ERROR result.
+
+    save_entry is always included — drafting works without Harvest connection
+    (drafts go to Supabase + Sheet); only Approve requires Harvest."""
     enabled: List[Dict] = []
     for t in TOOLS:
         name = t.get("name")
-        if name in _GOOGLE_TOOL_NAMES and has_google:
+        if name in _ALWAYS_ON_TOOL_NAMES:
+            enabled.append(t)
+        elif name in _GOOGLE_TOOL_NAMES and has_google:
             enabled.append(t)
         elif name in _HARVEST_TOOL_NAMES and has_harvest:
             enabled.append(t)
@@ -930,6 +1004,10 @@ async def execute_tool(
     harvest_access_token: Optional[str] = None,
     harvest_user_id: Optional[int] = None,
     user_dialect: Optional[str] = None,
+    entries_sink: Optional[List[Dict]] = None,
+    user_name: Optional[str] = None,
+    user_email: Optional[str] = None,
+    selected_date: Optional[str] = None,
 ) -> str:
     """Execute a tool call and return the result string for Claude.
 
@@ -937,7 +1015,14 @@ async def execute_tool(
     `harvest_access_token` + `harvest_user_id` are the Harvest context for
     list_entries / delete_entry / edit_entry. When the Harvest context is
     missing, those tools return an explicit error string the model can show
-    to the user."""
+    to the user.
+
+    `entries_sink` + `user_name` + `user_email` + `selected_date` are required
+    by the `save_entry` tool — when the model creates an entry via tool_use,
+    the saved entry is appended to entries_sink so the chat endpoint can
+    surface it back to the frontend (green Drafted bubble + draft card).
+    Without entries_sink, save_entry returns an explicit error rather than
+    silently swallowing the entry."""
     try:
         if tool_name == "scan_emails":
             emails = gmail_sync.search_emails(
@@ -1014,6 +1099,53 @@ async def execute_tool(
             return (
                 f"Edited entry harvest_id={hid}: spent_date={updated.get('spent_date')} "
                 f"hours={updated.get('hours')} notes={(updated.get('notes') or '')[:80]}"
+            )
+
+        elif tool_name == "save_entry":
+            if entries_sink is None:
+                return (
+                    "ERROR: save_entry was called outside a chat session — entries_sink "
+                    "missing. Tell the user to retry."
+                )
+            try:
+                hours_val = float(tool_input.get("hours", 0) or 0)
+            except (TypeError, ValueError):
+                return "ERROR: save_entry needs a numeric `hours` value."
+            if hours_val <= 0:
+                return "ERROR: save_entry needs hours > 0."
+            project_name = (tool_input.get("project_name") or "").strip()
+            client_name = (tool_input.get("client") or "").strip()
+            if not project_name or not client_name:
+                return "ERROR: save_entry needs both `client` and `project_name`."
+            entry_data = {
+                "client": client_name,
+                "project_code": (tool_input.get("project_code") or "").strip(),
+                "project_name": project_name,
+                "task": (tool_input.get("task") or project_name).strip(),
+                "hours": hours_val,
+                "notes": (tool_input.get("notes") or "").strip(),
+                "status": tool_input.get("status") or "Draft",
+            }
+            # Only set "date" if the model gave a non-empty value — otherwise
+            # leave it absent so save_entry_everywhere falls back to
+            # selected_date (picker) → user's local today.
+            tool_date = (tool_input.get("date") or "").strip()
+            if tool_date:
+                entry_data["date"] = tool_date
+            saved = save_entry_everywhere(
+                user_name or "user",
+                entry_data,
+                user_email=user_email or "",
+                fallback_date=selected_date,
+            )
+            entries_sink.append(saved)
+            hrs_str = f"{saved.get('hours')}h"
+            return (
+                f"Drafted entry id={saved.get('id')}: {hrs_str} on "
+                f"{saved.get('client')} / {saved.get('project_name')} for {saved.get('date')}. "
+                "The draft is now visible in the right panel — write a short user-facing reply "
+                "confirming it's drafted (use the word 'Drafted', not 'Logged') and tell them "
+                "to click Approve to push to Harvest."
             )
 
         else:
@@ -1333,6 +1465,10 @@ async def chat(req: ChatRequest, request: Request):
     chat_start_ts = time.time()
     tool_calls_log: List[Dict] = []
     last_usage: Dict = {}
+    # Entries created via the save_entry tool during this turn — populated by
+    # execute_tool. Combined with text-emitted ENTRY blocks (legacy fallback)
+    # below.
+    tool_entries_sink: List[Dict] = []
 
     while iterations < MAX_TOOL_ITERATIONS:
         iterations += 1
@@ -1409,6 +1545,10 @@ async def chat(req: ChatRequest, request: Request):
                             harvest_access_token=harvest_access_token,
                             harvest_user_id=harvest_user_id_for_tools,
                             user_dialect=user_dialect_for_tools,
+                            entries_sink=tool_entries_sink,
+                            user_name=req.user,
+                            user_email=user.get("email", ""),
+                            selected_date=req.selected_date,
                         )
 
                     tool_results.append({
@@ -1441,15 +1581,18 @@ async def chat(req: ChatRequest, request: Request):
             "Let me know if you'd like me to continue."
         )
 
-    # Parse any entries from the response
+    # Parse any entries from the response — legacy fallback for the text-emitted
+    # ```ENTRY block format. Tool-emitted entries are already in tool_entries_sink.
     display_text, entries_data = parse_entries_from_response(final_text)
 
     # Save chat messages to Supabase
     harvest_mock.save_chat_message(req.user, "user", req.message)
     harvest_mock.save_chat_message(req.user, "assistant", display_text)
 
-    # Save entries to Supabase + Sheets + Harvest
-    created_entries = []
+    # Save entries to Supabase + Sheets. Tool-created entries first (already
+    # saved by execute_tool); then any text-block entries the legacy parser
+    # picked up.
+    created_entries: List[Dict] = list(tool_entries_sink)
     for entry_data in entries_data:
         entry = save_entry_everywhere(
             req.user,
@@ -1632,6 +1775,8 @@ async def chat_stream(req: ChatRequest, request: Request):
         iterations = 0
         final_text_parts: List[str] = []
         last_response = None
+        # Entries created via the save_entry tool during this turn.
+        tool_entries_sink: List[Dict] = []
 
         try:
             while iterations < MAX_TOOL_ITERATIONS:
@@ -1696,6 +1841,10 @@ async def chat_stream(req: ChatRequest, request: Request):
                                     harvest_access_token=harvest_access_token,
                                     harvest_user_id=harvest_user_id_for_tools,
                                     user_dialect=user_dialect_for_tools,
+                                    entries_sink=tool_entries_sink,
+                                    user_name=req.user,
+                                    user_email=user.get("email", ""),
+                                    selected_date=req.selected_date,
                                 )
                             tool_results.append({
                                 "type": "tool_result",
@@ -1716,7 +1865,9 @@ async def chat_stream(req: ChatRequest, request: Request):
             harvest_mock.save_chat_message(req.user, "user", req.message)
             harvest_mock.save_chat_message(req.user, "assistant", display_text)
 
-            created_entries = []
+            # Tool-created entries first (already saved); then any legacy
+            # text-block entries the parser picked up.
+            created_entries: List[Dict] = list(tool_entries_sink)
             for entry_data in entries_data:
                 entry = save_entry_everywhere(
                     req.user,
