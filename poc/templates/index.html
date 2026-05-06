@@ -2152,22 +2152,30 @@ What have you been up to?</div>
 
     sendBtn.addEventListener('click', sendMessage);
 
-    chatInput.addEventListener('keydown', (e) => {
-        // Plain Enter sends. Cmd/Ctrl+Enter and Shift+Enter both insert a
-        // newline (Hugh clarified 2026-05-07: he wants Cmd+Enter for newline,
-        // not send — the input is now a textarea so newlines actually work).
-        if (e.key === 'Enter') {
-            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-            e.preventDefault();
-            sendMessage();
-        }
-    });
-
     function autosizeChatInput() {
         chatInput.style.height = 'auto';
         chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
     }
     chatInput.addEventListener('input', autosizeChatInput);
+
+    chatInput.addEventListener('keydown', (e) => {
+        // Plain Enter sends. Shift+Enter inserts a newline natively. Browsers
+        // do NOT insert a newline natively on Cmd/Ctrl+Enter in a textarea
+        // (it's a no-op), so we have to splice "\n" at the cursor ourselves.
+        if (e.key !== 'Enter') return;
+        if (e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            const start = chatInput.selectionStart;
+            const end = chatInput.selectionEnd;
+            chatInput.value = chatInput.value.slice(0, start) + '\n' + chatInput.value.slice(end);
+            chatInput.selectionStart = chatInput.selectionEnd = start + 1;
+            autosizeChatInput();
+            return;
+        }
+        if (e.shiftKey) return; // native textarea newline
+        e.preventDefault();
+        sendMessage();
+    });
 
     micBtn.addEventListener('click', () => {
         if (isRecording) {
