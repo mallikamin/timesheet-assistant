@@ -862,7 +862,9 @@ What have you been up to?</div>
     }
 
     function pushHistory(msg) {
-        pushHistory(msg);
+        // Inline append without using `.push(` so a future global rename
+        // can't accidentally make this recurse on itself again.
+        conversationHistory[conversationHistory.length] = msg;
         persistHistory();
     }
 
