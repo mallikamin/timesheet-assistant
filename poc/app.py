@@ -1279,6 +1279,14 @@ async def execute_tool(
             # leave it absent so save_entry_everywhere falls back to
             # selected_date (picker) → user's local today.
             tool_date = (tool_input.get("date") or "").strip()
+            # Verbose ground-truth log so we can debug live why a clamp did
+            # or did not fire. Keep until UAT date drift is fully resolved.
+            print(
+                f"[DBG save_entry] tool_input.date={tool_input.get('date')!r} "
+                f"selected_date={selected_date!r} "
+                f"user_email={user_email!r} "
+                f"user_message={(user_message or '')[:100]!r}"
+            )
             if tool_date:
                 clamped_date, clamp_reason = _clamp_entry_date_to_today(
                     tool_date=tool_date,
@@ -1286,9 +1294,14 @@ async def execute_tool(
                     user_email=user_email,
                     selected_date=selected_date,
                 )
-                if clamp_reason:
-                    print(f"[INFO] save_entry date clamp: {clamp_reason}")
+                print(
+                    f"[DBG save_entry clamp] tool_date={tool_date!r} "
+                    f"clamped_date={clamped_date!r} reason={clamp_reason!r}"
+                )
                 entry_data["date"] = clamped_date
+            else:
+                print("[DBG save_entry clamp] tool_date empty — no clamp; "
+                      "save_entry_everywhere will fall back to selected_date or today")
             saved = save_entry_everywhere(
                 user_name or "user",
                 entry_data,
@@ -1345,6 +1358,10 @@ async def health(request: Request):
         },
         "build": {
             "local_demo_only": LOCAL_DEMO_ONLY,
+            # Bumped per code change so we can confirm a deploy went live —
+            # if /health returns the old marker, Render hasn't reloaded yet
+            # and any UAT result on the chat path is from stale code.
+            "marker": "today-clamp-debug-2026-05-07c",
         },
     }
 
@@ -1899,9 +1916,16 @@ async def chat(req: ChatRequest, request: Request):
     # saved by execute_tool); then any text-block entries the legacy parser
     # picked up.
     created_entries: List[Dict] = list(tool_entries_sink)
+    print(
+        f"[DBG /api/chat] tool_entries_sink={len(tool_entries_sink)} "
+        f"text_entries_data={len(entries_data)} "
+        f"selected_date={req.selected_date!r} "
+        f"user_message={(req.message or '')[:100]!r}"
+    )
     for entry_data in entries_data:
         # Same "today" clamp as the tool-use path — protects the legacy
         # text-emitted ENTRY block format from chat-history date drift.
+        print(f"[DBG /api/chat ENTRY-block] entry_data.date={entry_data.get('date')!r}")
         if entry_data.get("date"):
             clamped, reason = _clamp_entry_date_to_today(
                 tool_date=entry_data["date"],
@@ -1909,8 +1933,7 @@ async def chat(req: ChatRequest, request: Request):
                 user_email=user.get("email", ""),
                 selected_date=req.selected_date,
             )
-            if reason:
-                print(f"[INFO] ENTRY-block date clamp: {reason}")
+            print(f"[DBG /api/chat ENTRY-block clamp] in={entry_data['date']!r} out={clamped!r} reason={reason!r}")
             entry_data["date"] = clamped
         entry = save_entry_everywhere(
             req.user,
@@ -2192,7 +2215,14 @@ async def chat_stream(req: ChatRequest, request: Request):
             # Tool-created entries first (already saved); then any legacy
             # text-block entries the parser picked up.
             created_entries: List[Dict] = list(tool_entries_sink)
+            print(
+                f"[DBG /api/chat/stream] tool_entries_sink={len(tool_entries_sink)} "
+                f"text_entries_data={len(entries_data)} "
+                f"selected_date={req.selected_date!r} "
+                f"user_message={(req.message or '')[:100]!r}"
+            )
             for entry_data in entries_data:
+                print(f"[DBG /api/chat/stream ENTRY-block] entry_data.date={entry_data.get('date')!r}")
                 if entry_data.get("date"):
                     clamped, reason = _clamp_entry_date_to_today(
                         tool_date=entry_data["date"],
@@ -2200,8 +2230,7 @@ async def chat_stream(req: ChatRequest, request: Request):
                         user_email=user.get("email", ""),
                         selected_date=req.selected_date,
                     )
-                    if reason:
-                        print(f"[INFO] ENTRY-block date clamp (stream): {reason}")
+                    print(f"[DBG /api/chat/stream ENTRY-block clamp] in={entry_data['date']!r} out={clamped!r} reason={reason!r}")
                     entry_data["date"] = clamped
                 entry = save_entry_everywhere(
                     req.user,
