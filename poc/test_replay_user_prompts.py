@@ -301,15 +301,29 @@ class SaveEntryRespectsPickedDateTests(_TimeFixed):
 
 
 class CmdEnterReplayTests(unittest.TestCase):
-    """Hugh asked for Cmd-Enter. The handler is in the template — we assert
-    the source still binds the right modifiers."""
+    """Hugh's clarification 2026-05-07: Cmd/Ctrl+Enter inserts a newline,
+    plain Enter sends. (Inverts the original behavior we shipped.) That
+    requires the chat input to be a <textarea>, not <input type="text">."""
 
-    def test_template_handles_cmd_or_ctrl_enter(self):
+    def test_template_uses_textarea_not_text_input(self):
         path = _HERE / "templates" / "index.html"
         src = path.read_text(encoding="utf-8")
-        self.assertIn("metaKey", src)
-        self.assertIn("ctrlKey", src)
-        self.assertIn("Cmd/Ctrl+Enter", src)
+        self.assertIn('id="chatInput"', src)
+        self.assertIn('<textarea class="chat-input" id="chatInput"', src)
+        self.assertNotIn('<input type="text" class="chat-input"', src)
+
+    def test_template_keydown_sends_on_plain_enter_only(self):
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        # Modifiers must short-circuit and let the textarea insert a newline.
+        self.assertIn("if (e.metaKey || e.ctrlKey || e.shiftKey) return;", src)
+        # Plain Enter calls sendMessage() after preventDefault.
+        self.assertIn("sendMessage()", src)
+
+    def test_template_placeholder_describes_new_behavior(self):
+        path = _HERE / "templates" / "index.html"
+        src = path.read_text(encoding="utf-8")
+        self.assertIn("Enter to send, Cmd/Ctrl+Enter for newline", src)
 
 
 class MultiDayResumeReplayTests(unittest.TestCase):

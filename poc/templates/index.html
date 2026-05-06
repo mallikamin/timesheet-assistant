@@ -458,6 +458,12 @@
             font-size: 14px;
             outline: none;
             transition: border-color 0.2s;
+            font-family: inherit;
+            line-height: 1.4;
+            resize: none;
+            min-height: 44px;
+            max-height: 160px;
+            overflow-y: auto;
         }
         .chat-input:focus { border-color: #1a1a2e; }
         .chat-input::placeholder { color: #aaa; }
@@ -957,9 +963,9 @@ What have you been up to?</div>
             </div>
             <div class="chat-input-row">
                 <button class="btn btn-mic" id="micBtn" title="Click to speak">&#127908;</button>
-                <input type="text" class="chat-input" id="chatInput"
-                       placeholder="Tell me what you worked on... (Cmd/Ctrl+Enter to send)"
-                       autocomplete="off">
+                <textarea class="chat-input" id="chatInput" rows="1"
+                          placeholder="Tell me what you worked on... (Enter to send, Cmd/Ctrl+Enter for newline)"
+                          autocomplete="off"></textarea>
                 <button class="btn btn-send" id="sendBtn">Send</button>
             </div>
         </div>
@@ -1229,6 +1235,7 @@ What have you been up to?</div>
         isProcessing = true;
         sendBtn.disabled = true;
         chatInput.value = '';
+        chatInput.style.height = '';
         lastUserMessage = text;
 
         addMessage('user', text);
@@ -2146,19 +2153,21 @@ What have you been up to?</div>
     sendBtn.addEventListener('click', sendMessage);
 
     chatInput.addEventListener('keydown', (e) => {
-        // Enter (no modifiers) sends. Cmd+Enter / Ctrl+Enter also sends —
-        // requested by Hugh, who's used to that shortcut from other chat tools.
-        // Shift+Enter is reserved for newline (input is currently single-line
-        // but kept consistent so a future textarea Just Works).
+        // Plain Enter sends. Cmd/Ctrl+Enter and Shift+Enter both insert a
+        // newline (Hugh clarified 2026-05-07: he wants Cmd+Enter for newline,
+        // not send — the input is now a textarea so newlines actually work).
         if (e.key === 'Enter') {
-            const cmdOrCtrl = e.metaKey || e.ctrlKey;
-            if (e.shiftKey) return;
+            if (e.metaKey || e.ctrlKey || e.shiftKey) return;
             e.preventDefault();
             sendMessage();
-            // cmdOrCtrl is treated the same as plain Enter — no separate handler.
-            void cmdOrCtrl;
         }
     });
+
+    function autosizeChatInput() {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
+    }
+    chatInput.addEventListener('input', autosizeChatInput);
 
     micBtn.addEventListener('click', () => {
         if (isRecording) {
