@@ -2388,7 +2388,7 @@ What have you been up to?</div>
         }).join('');
     }
 
-    function buildEditorBlock(dayIdx, evIdx, candidates) {
+    function buildEditorBlock(dayIdx, evIdx, candidates, showCancel) {
         const optionsHtml = buildOptionsHtml(candidates);
         const assignedCount = candidates.filter(c => c.is_assigned).length;
         const totalCount = candidates.length;
@@ -2399,6 +2399,14 @@ What have you been up to?</div>
                 : `your ${assignedCount} assigned`);
         const showAllChecked = weeklyShowAllProjects ? 'checked' : '';
         const showAllDisabled = (assignedCount === 0) ? 'disabled' : '';
+        // Cancel only renders when the user explicitly opened the editor
+        // via Edit (showCancel=true). For low/unknown rows that auto-open
+        // the editor, there is nothing to cancel TO — the row has no AI
+        // suggestion to fall back to — so we hide Cancel rather than show
+        // a button that does nothing visible.
+        const cancelBtn = showCancel
+            ? `<button class="wr-cancel-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="cancel-edit">Cancel</button>`
+            : '';
         return `
             <div class="wr-editor">
                 <select class="wr-select" data-day="${dayIdx}" data-ev="${evIdx}">
@@ -2413,7 +2421,7 @@ What have you been up to?</div>
                 <span class="wr-editor-hint">${hint}</span>
                 <div class="wr-editor-actions">
                     <button class="wr-confirm-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="confirm-pick">Save</button>
-                    <button class="wr-cancel-btn" data-day="${dayIdx}" data-ev="${evIdx}" data-action="cancel-edit">Cancel</button>
+                    ${cancelBtn}
                 </div>
             </div>
         `;
@@ -2473,7 +2481,10 @@ What have you been up to?</div>
         if (ev._approved) {
             actionsBlock = `<span style="color:#43a047; font-size:12px;">&#10003; Drafted</span>`;
         } else if (editing) {
-            actionsBlock = buildEditorBlock(dayIdx, evIdx, candidates);
+            // showCancel=true only when the user explicitly clicked Edit
+            // on a high/medium row. Low/unknown auto-open has no
+            // 'previous state' to cancel to, so we hide Cancel there.
+            actionsBlock = buildEditorBlock(dayIdx, evIdx, candidates, !!ev._editing);
         } else {
             // High/medium confidence with no override yet — Approve plus
             // Edit so the user can override an incorrect AI suggestion

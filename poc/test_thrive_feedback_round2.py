@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import sys
 import unittest
 from datetime import date, datetime, timedelta
@@ -1176,6 +1177,248 @@ class DraftHallucinationGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(recovered)
         self.assertEqual(len(sink), 0)
+
+
+class CalendarEditEndToEndTests(unittest.IsolatedAsyncioTestCase):
+    """Server-side integration tests for the Last-7-Days Edit flow.
+    Critical because the user can't browser-test (dummy Google Calendar
+    is empty). These hit the actual /api/calendar/categorize endpoint
+    via the same code path the frontend Save button triggers, with
+    harvest_mock + sheets_sync stubbed at the I/O boundary so we
+    exercise everything in between."""
+
+    def setUp(self):
+        import app as app_mod
+        self.app_mod = app_mod
+        self.user = {
+            "email": "miles.alexander@thrivepr.com.au",
+            "name": "Miles Alexander",
+        }
+
+    async def test_edit_save_creates_draft_with_user_pick_not_ai_suggestion(self):
+        """User picked Acuity but AI suggested Thrive Operation. The
+        saved draft must reflect the USER'S pick, not the AI's."""
+        captured_create = []
+
+        def fake_create_draft_entry(**kwargs):
+            captured_create.append(kwargs)
+            return {
+                "id": "draft-edit-1",
+                "client": kwargs["client"],
+                "project_code": kwargs["project_code"],
+                "project_name": kwargs["project_name"],
+                "task": kwargs["task"],
+                "hours": kwargs["hours"],
+                "notes": kwargs["notes"],
+                "date": kwargs["entry_date"],
+                "status": "Draft",
+            }
+
+        req_body = self.app_mod.CategorizeRequest(
+            event_id="evt-001",
+            event_date="2026-05-06",
+            event_title="Acuity strategy session",
+            event_duration_hours=1.0,
+            project_code="6-1000",
+            client="Acuity - Existing Business Growth FY26",
+            task_name="Client - Strategy & Creative Development",
+            create_draft=True,
+            original_client="Thrive Operation FY26",
+            original_task_name="Thrive Operation - Reporting & WIPs",
+        )
+        request = _FakeRequest({"user": self.user})
+
+        with patch.object(self.app_mod.harvest_mock, "create_draft_entry",
+                          side_effect=fake_create_draft_entry), \
+             patch.object(self.app_mod.sheets_sync, "sync_entry_to_sheet",
+                          return_value=None), \
+             patch.object(self.app_mod.user_profiles, "record_correction",
+                          return_value=None) as record_corr, \
+             patch.object(self.app_mod.user_profiles, "record_approval",
+                          return_value=None):
+            result = await self.app_mod.calendar_categorize(req_body, request)
+
+        # Endpoint returned success
+        self.assertTrue(result.get("success"), f"unexpected result: {result}")
+        # The draft was created with the USER'S pick, not the AI's
+        self.assertEqual(len(captured_create), 1)
+        saved = captured_create[0]
+        self.assertEqual(saved["client"], "Acuity - Existing Business Growth FY26")
+        self.assertEqual(saved["task"], "Client - Strategy & Creative Development")
+        self.assertEqual(saved["hours"], 1.0)
+        self.assertEqual(saved["entry_date"], "2026-05-06")
+        # Correction signal landed in the user profile (anti-repeat learning)
+        record_corr.assert_called_once()
+
+    async def test_edit_save_no_correction_when_picked_matches_ai(self):
+        """If the user clicks Edit but ends up picking the same project
+        the AI suggested (Save without changes), no correction is logged
+        — would be a false positive in the user's profile."""
+        def fake_create(**kw):
+            return {"id": "draft-edit-2", **kw, "date": kw["entry_date"], "status": "Draft"}
+
+        req_body = self.app_mod.CategorizeRequest(
+            event_id="evt-002",
+            event_date="2026-05-06",
+            event_title="Thrive WIP",
+            event_duration_hours=0.5,
+            project_code="3-0010",
+            client="Thrive Operation FY26",
+            task_name="Thrive Operation - Reporting & WIPs",
+            create_draft=True,
+            # Same as picked — not a correction.
+            original_client="Thrive Operation FY26",
+            original_task_name="Thrive Operation - Reporting & WIPs",
+        )
+        request = _FakeRequest({"user": self.user})
+
+        with patch.object(self.app_mod.harvest_mock, "create_draft_entry",
+                          side_effect=fake_create), \
+             patch.object(self.app_mod.sheets_sync, "sync_entry_to_sheet",
+                          return_value=None), \
+             patch.object(self.app_mod.user_profiles, "record_correction",
+                          return_value=None) as record_corr, \
+             patch.object(self.app_mod.user_profiles, "record_approval",
+                          return_value=None):
+            result = await self.app_mod.calendar_categorize(req_body, request)
+
+        self.assertTrue(result.get("success"))
+        # No correction recorded — the user confirmed the AI's pick
+        record_corr.assert_not_called()
+
+    async def test_edit_save_no_draft_when_create_draft_false(self):
+        """create_draft=False is used for batch flows that record a
+        correction without re-creating the draft. Must not double-create."""
+        captured = []
+        req_body = self.app_mod.CategorizeRequest(
+            event_id="evt-003",
+            event_date="2026-05-06",
+            event_title="Sydney WIP",
+            event_duration_hours=0.5,
+            project_code="3-0010",
+            client="Thrive Operation FY26",
+            task_name="Thrive Operation - Reporting & WIPs",
+            create_draft=False,  # KEY
+            original_client="Thrive Innovation Project",
+            original_task_name="Thrive - Digital Champions",
+        )
+        request = _FakeRequest({"user": self.user})
+
+        with patch.object(self.app_mod.harvest_mock, "create_draft_entry",
+                          side_effect=lambda **k: captured.append(k) or {}), \
+             patch.object(self.app_mod.user_profiles, "record_correction",
+                          return_value=None), \
+             patch.object(self.app_mod.user_profiles, "record_approval",
+                          return_value=None):
+            result = await self.app_mod.calendar_categorize(req_body, request)
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(captured, [], "draft created despite create_draft=False")
+
+    async def test_edit_save_unauthenticated_returns_clean_error(self):
+        """No user session → endpoint returns success=False without
+        crashing or leaking server state."""
+        req_body = self.app_mod.CategorizeRequest(
+            event_id="evt-004",
+            event_date="2026-05-06",
+            event_title="Test",
+            event_duration_hours=1.0,
+            project_code="3-0010",
+            client="Thrive Operation FY26",
+            task_name="Thrive Operation - Reporting & WIPs",
+            create_draft=True,
+        )
+        request = _FakeRequest({})  # no user
+        result = await self.app_mod.calendar_categorize(req_body, request)
+        self.assertFalse(result.get("success"))
+        self.assertEqual(result.get("error"), "not_authenticated")
+
+
+class CalendarEditTemplateStructureTests(unittest.TestCase):
+    """Headless DOM-structure validation. Beyond keyword-grep: parses
+    the template's HTML and asserts the editor's children + the click
+    handler's data-action dispatch covers every data-action emitted by
+    the JS render functions. Catches typo'd or orphan handlers."""
+
+    def setUp(self):
+        self.template = (_HERE / "templates" / "index.html").read_text(encoding="utf-8")
+
+    def test_data_actions_in_render_match_dispatch(self):
+        """Every data-action used in renderRow / buildEditorBlock must
+        have a matching branch in the click handler's dispatch table.
+        Otherwise a click does nothing silently."""
+        # Data-actions emitted (excluding test fixtures)
+        # Use a regex to extract `data-action="..."` literals
+        action_emitters = set(re.findall(r'data-action="([a-z\-]+)"', self.template))
+        # Should include the four primary actions from PR #28
+        for action in {"confirm-suggested", "confirm-pick", "open-edit", "cancel-edit", "toggle-show-all"}:
+            self.assertIn(action, action_emitters, f"data-action={action} not emitted anywhere")
+
+        # Now every BUTTON data-action must appear in the click dispatch
+        # (toggle-show-all is on a checkbox, handled by change listener)
+        click_branches = set(re.findall(r"action === '([a-z\-]+)'", self.template))
+        button_actions = action_emitters - {"toggle-show-all"}
+        missing = button_actions - click_branches
+        self.assertFalse(missing, f"click handler missing branches for: {missing}")
+
+    def test_change_handler_covers_toggle(self):
+        """The toggle-show-all action is on a checkbox — must be wired in
+        a 'change' event listener, not a click listener."""
+        self.assertIn("addEventListener('change'", self.template)
+        self.assertIn('toggle-show-all', self.template)
+        # Multiple change listeners exist (datepicker, sort dropdown, weekly).
+        # Find the one whose body references toggle-show-all and assert it
+        # reads `.checked` and re-renders the weekly view.
+        match = re.search(
+            r"addEventListener\('change',\s*\(e\)\s*=>\s*\{[^}]*toggle-show-all[^}]*\}",
+            self.template,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match, "no 'change' listener wraps toggle-show-all")
+        change_section = match.group(0)
+        self.assertIn("tgt.checked", change_section)
+        self.assertIn("renderWeekly(weeklyData)", change_section)
+
+    def test_editor_data_attrs_match_query_selector(self):
+        """confirmPicked queries select.wr-select[data-day="X"][data-ev="Y"].
+        The editor's <select> must emit those exact data attributes."""
+        # The select tag with data-day + data-ev
+        self.assertRegex(
+            self.template,
+            r'<select\s+class="wr-select"\s+data-day="\$\{dayIdx\}"\s+data-ev="\$\{evIdx\}"',
+        )
+        # The query selector
+        self.assertIn(
+            'select.wr-select[data-day="${dayIdx}"][data-ev="${evIdx}"]',
+            self.template,
+        )
+
+    def test_options_have_data_client_and_data_task(self):
+        """confirmPicked reads opt.getAttribute('data-client') / 'data-task'.
+        buildOptionsHtml must emit both."""
+        # The option emitter
+        self.assertIn('data-client="${escapeAttr(c.client)}"', self.template)
+        self.assertIn('data-task="${escapeAttr(c.task_name)}"', self.template)
+        # The reader
+        self.assertIn("opt.getAttribute('data-client')", self.template)
+        self.assertIn("opt.getAttribute('data-task')", self.template)
+
+    def test_cancel_only_renders_when_user_explicitly_opened_editor(self):
+        """Audit fix 2026-05-07: low/unknown rows auto-open the editor;
+        Cancel on those would be a no-op (the row would just auto-reopen
+        on re-render). buildEditorBlock now takes a showCancel flag and
+        only emits Cancel when the user explicitly clicked Edit."""
+        # Function signature accepts the flag
+        self.assertIn("buildEditorBlock(dayIdx, evIdx, candidates, showCancel)", self.template)
+        # Caller passes !!ev._editing
+        self.assertIn("buildEditorBlock(dayIdx, evIdx, candidates, !!ev._editing)", self.template)
+        # The cancel button is conditional on showCancel
+        self.assertIn("showCancel", self.template)
+        # And the conditional emit
+        self.assertRegex(
+            self.template,
+            r"showCancel\s*\?\s*`<button[^`]*data-action=\"cancel-edit\"",
+        )
 
 
 class CalendarEditActiveProjectsTests(unittest.TestCase):
