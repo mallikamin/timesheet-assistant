@@ -1744,5 +1744,172 @@ class DayNameDriftTests(unittest.TestCase):
         self.assertGreaterEqual(found_count, 1)
 
 
+class CostControlsTests(unittest.TestCase):
+    """Pre-VPS enterprise-grade cost controls: tools-schema caching,
+    per-user daily token cap, org-wide hourly ceiling, per-turn budget,
+    accumulator helper, dedup helper, admin endpoint gating."""
+
+    def setUp(self):
+        import rate_limit as rl
+        rl.reset_all()
+        self._rl = rl
+
+    def test_tools_for_user_marks_last_with_cache_control(self):
+        """The last tool returned by _tools_for_user must carry
+        cache_control=ephemeral so Anthropic caches the entire tools array
+        (~1.8K tokens) on every call after the first."""
+        import app as app_mod
+        tools = app_mod._tools_for_user(has_google=True, has_harvest=True)
+        self.assertIsNotNone(tools)
+        self.assertGreater(len(tools), 1)
+        for t in tools[:-1]:
+            self.assertNotIn("cache_control", t)
+        self.assertEqual(tools[-1].get("cache_control"), {"type": "ephemeral"})
+        # The original TOOLS list must NOT be mutated — we shallow-copy.
+        for t in app_mod.TOOLS:
+            self.assertNotIn("cache_control", t)
+
+    def test_tools_for_user_returns_none_when_empty(self):
+        """No connections means no callable tools other than save_entry,
+        which is always-on. The shape stays a list of length 1 with
+        cache_control on that single entry."""
+        import app as app_mod
+        tools = app_mod._tools_for_user(has_google=False, has_harvest=False)
+        self.assertIsNotNone(tools)
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0]["name"], "save_entry")
+        self.assertEqual(tools[0].get("cache_control"), {"type": "ephemeral"})
+
+    def test_accumulate_usage_sums_across_iterations(self):
+        """_accumulate_usage must sum input/output/cache_write/cache_read
+        across iterations and return the cumulative billable (input+output)
+        so the agentic loop can break before tripping the daily cap."""
+        import app as app_mod
+        running: dict = {}
+        n1 = app_mod._accumulate_usage(running, {
+            "input_tokens": 1000, "output_tokens": 200,
+            "cache_creation_input_tokens": 500, "cache_read_input_tokens": 8000,
+        })
+        self.assertEqual(n1, 1200)
+        n2 = app_mod._accumulate_usage(running, {
+            "input_tokens": 800, "output_tokens": 150,
+            "cache_creation_input_tokens": 0, "cache_read_input_tokens": 9000,
+        })
+        self.assertEqual(n2, 2150)
+        self.assertEqual(running["input_tokens"], 1800)
+        self.assertEqual(running["output_tokens"], 350)
+        self.assertEqual(running["cache_creation_input_tokens"], 500)
+        self.assertEqual(running["cache_read_input_tokens"], 17000)
+
+    def test_accumulate_usage_handles_missing_fields(self):
+        """A streamed mock response may have None or missing fields.
+        Helper must not crash and must skip non-int values."""
+        import app as app_mod
+        running: dict = {}
+        out = app_mod._accumulate_usage(running, {
+            "input_tokens": None, "output_tokens": 100,
+        })
+        self.assertEqual(out, 100)
+        out2 = app_mod._accumulate_usage(running, {})
+        self.assertEqual(out2, 100)
+
+    def test_check_token_budget_allows_under_cap(self):
+        """Fresh user with no recorded usage is allowed."""
+        ok, reason, retry = self._rl.check_token_budget("alice@example.com")
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+        self.assertEqual(retry, 0)
+
+    def test_check_token_budget_blocks_over_user_daily_cap(self):
+        """Once the per-user 24h rolling window exceeds DAILY_TOKEN_CAP,
+        every chat call is denied with reason=daily_token_cap."""
+        # Drive cap to zero for a deterministic test.
+        with patch.object(self._rl, "DAILY_TOKEN_CAP", 1000):
+            self._rl.record_token_usage("alice@example.com", 1500)
+            ok, reason, retry = self._rl.check_token_budget("alice@example.com")
+            self.assertFalse(ok)
+            self.assertEqual(reason, "daily_token_cap")
+            self.assertGreaterEqual(retry, 60)
+
+    def test_check_token_budget_blocks_over_org_hourly_ceiling(self):
+        """Org-wide circuit breaker fires even if no single user is over."""
+        with patch.object(self._rl, "HOURLY_BUDGET_CEILING", 1000):
+            self._rl.record_token_usage("alice@example.com", 600)
+            self._rl.record_token_usage("bob@example.com", 600)
+            ok, reason, retry = self._rl.check_token_budget("carol@example.com")
+            self.assertFalse(ok)
+            self.assertEqual(reason, "org_hourly_budget")
+
+    def test_check_token_budget_isolates_users(self):
+        """Alice over her cap doesn't block Bob."""
+        with patch.object(self._rl, "DAILY_TOKEN_CAP", 1000), \
+             patch.object(self._rl, "HOURLY_BUDGET_CEILING", 10**9):
+            self._rl.record_token_usage("alice@example.com", 5000)
+            ok, _, _ = self._rl.check_token_budget("bob@example.com")
+            self.assertTrue(ok)
+
+    def test_per_turn_token_budget_default_high_enough_for_normal_use(self):
+        """Production typical turn is ~15-30K tokens; the budget must be
+        well above that so no real chat ever trips it. This test pins the
+        contract — anyone lowering it below 50K must update the test on
+        purpose."""
+        import app as app_mod
+        self.assertGreaterEqual(app_mod.PER_TURN_TOKEN_BUDGET, 50000)
+
+    def test_dedup_helper_assemble_blocks_matches_legacy_shape(self):
+        """The _assemble_blocks helper must return the same 1- or 2-block
+        list shape that build_system_prompt has always returned."""
+        import app as app_mod
+        blocks = app_mod._assemble_blocks("CACHED CORE", None, None)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["text"], "CACHED CORE")
+        self.assertEqual(blocks[0]["cache_control"], {"type": "ephemeral"})
+        # With user → 2 blocks (user profile + auth-today merged into block B)
+        with patch.object(app_mod, "get_all_projects_for_prompt", return_value="x"):
+            blocks2 = app_mod.build_system_prompt(user_email="hugh.preston@thrivepr.com.au")
+        self.assertEqual(len(blocks2), 2)
+        self.assertIn("AUTHORITATIVE TODAY", blocks2[1]["text"])
+
+    def test_sync_and_async_system_prompts_are_byte_identical(self):
+        """Regression guard for the dedup: the sync and async builders must
+        emit identical text blocks (the only legitimate difference is the
+        Harvest projects-list source, which the tests stub to the same value)."""
+        import app as app_mod
+        with patch.object(app_mod, "get_all_projects_for_prompt", return_value="P"), \
+             patch.object(app_mod, "get_all_projects_for_prompt_async",
+                          new=lambda *_a, **_k: __import__("asyncio").sleep(0, result="P")):
+            sync_blocks = app_mod.build_system_prompt(user_email="hugh.preston@thrivepr.com.au")
+            import asyncio
+            async_blocks = asyncio.run(
+                app_mod.build_system_prompt_async(user_email="hugh.preston@thrivepr.com.au")
+            )
+        self.assertEqual(len(sync_blocks), len(async_blocks))
+        for s, a in zip(sync_blocks, async_blocks):
+            self.assertEqual(s["text"], a["text"])
+            self.assertEqual(s.get("cache_control"), a.get("cache_control"))
+
+    def test_admin_endpoint_blocks_non_admin(self):
+        """403 when the session user isn't in ADMIN_EMAILS."""
+        import app as app_mod
+        import asyncio
+        import httpx
+        async def _go():
+            transport = httpx.ASGITransport(app=app_mod.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+                return await ac.get("/api/admin/usage")
+        r = asyncio.run(_go())
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("admin access required", r.text)
+
+    def test_admin_emails_helper_recognises_listed_user(self):
+        """_is_admin matches by lowercased email; default list includes
+        Malik so the live-prod admin can hit the endpoint without
+        configuring an extra env var."""
+        import app as app_mod
+        self.assertTrue(app_mod._is_admin({"email": "Malik.Amin@thrivepr.com.au"}))
+        self.assertFalse(app_mod._is_admin({"email": "miles.alexander@thrivepr.com.au"}))
+        self.assertFalse(app_mod._is_admin(None))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
