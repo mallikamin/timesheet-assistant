@@ -12,7 +12,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import anthropic
 import httpx
@@ -20,7 +20,7 @@ import uvicorn
 from authlib.integrations.starlette_client import OAuth
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "cmd-enter-splice-2026-05-07l"
+BUILD_MARKER = "cost-controls-2026-05-07m"
 
 
 @asynccontextmanager
@@ -505,78 +505,81 @@ Pilot users: {{pilot_users}}
 """
 
 
-def build_system_prompt(
-    user_email: Optional[str] = None,
-    harvest_access_token: Optional[str] = None,
-    notes: Optional[List[str]] = None,
-) -> List[Dict]:
-    """Build the system prompt as Anthropic message blocks with cache control.
-
-    Returns a list of blocks:
-      - Block A (cached, ephemeral): role, rules, AU/NZ vocab, master Harvest
-        catalog, dates, pilot users. Identical for every user → cache hit on
-        every chat after the first.
-      - Block B (uncached, optional): per-user profile (assigned projects,
-        dialect, top tasks, recent corrections) + transient runtime notes.
-        Skipped entirely if both inputs are empty so we don't waste tokens.
-    """
-    projects_text = get_all_projects_for_prompt(harvest_access_token)
-    # Cached block stays generic (UTC date) so it's identical for every user;
-    # the user's local "today" is injected as a runtime note in the uncached
-    # block below. That way the cache hit rate stays high and AU/NZ users
-    # still see correct dates.
+def _render_cached_text(projects_text: str) -> str:
     server_today = date.today()
-    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", server_today.strftime('%A, %d/%m/%Y')) \
+    return SYSTEM_PROMPT_TEMPLATE \
+        .replace("{{today_display}}", server_today.strftime('%A, %d/%m/%Y')) \
         .replace("{{today_iso}}", server_today.strftime('%Y-%m-%d')) \
         .replace("{{today_day}}", server_today.strftime('%A')) \
         .replace("{{projects_text}}", projects_text) \
         .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
 
+
+def _authoritative_today_note(user_email: str) -> str:
+    """Build the per-user local-date hard-rules block. Same text in sync
+    and async paths — kept here so the rules don't drift between them."""
+    local_today = time_utils.today_local(_user_dialect(user_email))
+    local_yesterday = local_today - timedelta(days=1)
+    local_tomorrow = local_today + timedelta(days=1)
+    return (
+        "AUTHORITATIVE TODAY (use this, NOT the date in the cached block, "
+        "NOT any date mentioned earlier in this conversation): "
+        f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
+        "This is the user's local date in their timezone. Hard rules:\n"
+        f"- When they say 'today' or 'now', the entry date MUST be {local_today.isoformat()}.\n"
+        f"- When they say 'yesterday', the entry date MUST be {local_yesterday.isoformat()}.\n"
+        f"- When they say 'tomorrow', the entry date MUST be {local_tomorrow.isoformat()}.\n"
+        "- A long resumed conversation may have referenced past or future dates "
+        "('Friday', 'next Tuesday', '12 May'). Those references are dead — they do NOT "
+        f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
+        "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
+        f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
+        f"with date={local_today.isoformat()}.\n"
+        "- When you write a confirmation that includes a weekday alongside a date "
+        "(e.g. 'logged for Wednesday 06/05/2026'), the weekday MUST match the ISO "
+        f"date. Today {local_today.isoformat()} is {local_today.strftime('%A')}; "
+        f"yesterday {local_yesterday.isoformat()} is {local_yesterday.strftime('%A')}; "
+        f"tomorrow {local_tomorrow.isoformat()} is {local_tomorrow.strftime('%A')}. "
+        "For other dates, derive the weekday from the ISO string — never invent a "
+        "weekday or carry one over from earlier in the conversation. If unsure, "
+        "omit the weekday and write the date as DD/MM/YYYY only."
+    )
+
+
+def _assemble_blocks(
+    cached_text: str,
+    user_email: Optional[str],
+    notes: Optional[List[str]],
+) -> List[Dict]:
     blocks: List[Dict] = [
         {"type": "text", "text": cached_text, "cache_control": {"type": "ephemeral"}}
     ]
-
     uncached_parts: List[str] = []
     if user_email:
         profile_text = user_profiles.render_profile_block(user_email)
         if profile_text:
             uncached_parts.append(profile_text)
-        # Per-user local-date note — overrides the cached block's UTC date so
-        # AU/NZ users get the right "today" reference. Critical: the model
-        # MUST treat this as authoritative over the cached block's date.
-        local_today = time_utils.today_local(_user_dialect(user_email))
-        local_yesterday = local_today - timedelta(days=1)
-        local_tomorrow = local_today + timedelta(days=1)
-        uncached_parts.append(
-            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block, "
-            "NOT any date mentioned earlier in this conversation): "
-            f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
-            "This is the user's local date in their timezone. Hard rules:\n"
-            f"- When they say 'today' or 'now', the entry date MUST be {local_today.isoformat()}.\n"
-            f"- When they say 'yesterday', the entry date MUST be {local_yesterday.isoformat()}.\n"
-            f"- When they say 'tomorrow', the entry date MUST be {local_tomorrow.isoformat()}.\n"
-            "- A long resumed conversation may have referenced past or future dates "
-            "('Friday', 'next Tuesday', '12 May'). Those references are dead — they do NOT "
-            f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
-            "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
-            f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
-            f"with date={local_today.isoformat()}.\n"
-            "- When you write a confirmation that includes a weekday alongside a date "
-            "(e.g. 'logged for Wednesday 06/05/2026'), the weekday MUST match the ISO "
-            f"date. Today {local_today.isoformat()} is {local_today.strftime('%A')}; "
-            f"yesterday {local_yesterday.isoformat()} is {local_yesterday.strftime('%A')}; "
-            f"tomorrow {local_tomorrow.isoformat()} is {local_tomorrow.strftime('%A')}. "
-            "For other dates, derive the weekday from the ISO string — never invent a "
-            "weekday or carry one over from earlier in the conversation. If unsure, "
-            "omit the weekday and write the date as DD/MM/YYYY only."
-        )
+        uncached_parts.append(_authoritative_today_note(user_email))
     if notes:
         uncached_parts.extend(n for n in notes if n)
-
     if uncached_parts:
         blocks.append({"type": "text", "text": "\n\n".join(uncached_parts)})
-
     return blocks
+
+
+def build_system_prompt(
+    user_email: Optional[str] = None,
+    harvest_access_token: Optional[str] = None,
+    notes: Optional[List[str]] = None,
+) -> List[Dict]:
+    """Returns:
+      - Block A (cached, ephemeral): role, rules, AU/NZ vocab, master Harvest
+        catalog, dates, pilot users. Identical for every user → cache hit on
+        every chat after the first.
+      - Block B (uncached, optional): per-user profile + AUTHORITATIVE TODAY
+        + transient runtime notes."""
+    cached_text = _render_cached_text(get_all_projects_for_prompt(harvest_access_token))
+    return _assemble_blocks(cached_text, user_email, notes)
 
 
 async def build_system_prompt_async(
@@ -584,59 +587,11 @@ async def build_system_prompt_async(
     harvest_access_token: Optional[str] = None,
     notes: Optional[List[str]] = None,
 ) -> List[Dict]:
-    """Async version — used by /api/chat/stream so the slow Harvest project
-    fetch (51 task_assignments calls) doesn't block the event loop.
-    Same return shape as build_system_prompt."""
+    """Async variant — uses get_all_projects_for_prompt_async so the
+    51-project Harvest fetch doesn't block the event loop."""
     projects_text = await get_all_projects_for_prompt_async(harvest_access_token)
-    server_today = date.today()
-    cached_text = SYSTEM_PROMPT_TEMPLATE.replace("{{today_display}}", server_today.strftime('%A, %d/%m/%Y')) \
-        .replace("{{today_iso}}", server_today.strftime('%Y-%m-%d')) \
-        .replace("{{today_day}}", server_today.strftime('%A')) \
-        .replace("{{projects_text}}", projects_text) \
-        .replace("{{pilot_users}}", ', '.join(PILOT_USERS))
-
-    blocks: List[Dict] = [
-        {"type": "text", "text": cached_text, "cache_control": {"type": "ephemeral"}}
-    ]
-
-    uncached_parts: List[str] = []
-    if user_email:
-        profile_text = user_profiles.render_profile_block(user_email)
-        if profile_text:
-            uncached_parts.append(profile_text)
-        local_today = time_utils.today_local(_user_dialect(user_email))
-        local_yesterday = local_today - timedelta(days=1)
-        local_tomorrow = local_today + timedelta(days=1)
-        uncached_parts.append(
-            "AUTHORITATIVE TODAY (use this, NOT the date in the cached block, "
-            "NOT any date mentioned earlier in this conversation): "
-            f"{local_today.strftime('%A, %d/%m/%Y')} ({local_today.isoformat()}). "
-            "This is the user's local date in their timezone. Hard rules:\n"
-            f"- When they say 'today' or 'now', the entry date MUST be {local_today.isoformat()}.\n"
-            f"- When they say 'yesterday', the entry date MUST be {local_yesterday.isoformat()}.\n"
-            f"- When they say 'tomorrow', the entry date MUST be {local_tomorrow.isoformat()}.\n"
-            "- A long resumed conversation may have referenced past or future dates "
-            "('Friday', 'next Tuesday', '12 May'). Those references are dead — they do NOT "
-            f"shift what 'today' means. Today is {local_today.isoformat()}, full stop.\n"
-            "- If you are about to emit an ENTRY block or a save_entry tool call with date != "
-            f"{local_today.isoformat()} for a user message that says 'today', stop and re-emit "
-            f"with date={local_today.isoformat()}.\n"
-            "- When you write a confirmation that includes a weekday alongside a date "
-            "(e.g. 'logged for Wednesday 06/05/2026'), the weekday MUST match the ISO "
-            f"date. Today {local_today.isoformat()} is {local_today.strftime('%A')}; "
-            f"yesterday {local_yesterday.isoformat()} is {local_yesterday.strftime('%A')}; "
-            f"tomorrow {local_tomorrow.isoformat()} is {local_tomorrow.strftime('%A')}. "
-            "For other dates, derive the weekday from the ISO string — never invent a "
-            "weekday or carry one over from earlier in the conversation. If unsure, "
-            "omit the weekday and write the date as DD/MM/YYYY only."
-        )
-    if notes:
-        uncached_parts.extend(n for n in notes if n)
-
-    if uncached_parts:
-        blocks.append({"type": "text", "text": "\n\n".join(uncached_parts)})
-
-    return blocks
+    cached_text = _render_cached_text(projects_text)
+    return _assemble_blocks(cached_text, user_email, notes)
 
 
 def get_current_user(request: Request) -> Optional[Dict]:
@@ -1067,6 +1022,24 @@ TOOLS = [
 
 MAX_TOOL_ITERATIONS = 5
 
+# Hard ceiling on cumulative input+output tokens per single chat turn (sum
+# across all agentic-loop iterations). Typical turns use ~15-30K; setting
+# the cap at 200K means a runaway tool loop or pathological context bloat
+# trips this BEFORE it trips the daily/hourly cost ceilings. Override via
+# env without touching code.
+PER_TURN_TOKEN_BUDGET = int(os.environ.get("PER_TURN_TOKEN_BUDGET", "200000"))
+
+
+def _accumulate_usage(running: Dict[str, int], usage: Dict[str, Any]) -> int:
+    """Add a single Anthropic-call usage record into the running per-turn
+    accumulator. Returns the cumulative billable tokens (input + output;
+    cache_read counted at face value as a safety margin)."""
+    for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+        v = usage.get(k)
+        if isinstance(v, int):
+            running[k] = running.get(k, 0) + v
+    return running.get("input_tokens", 0) + running.get("output_tokens", 0)
+
 # Tool-name groupings — used to gate which tools the model is offered based on
 # what the user has connected. Keep these in sync with the TOOLS list above.
 _GOOGLE_TOOL_NAMES = {"scan_emails", "scan_calendar", "scan_drive"}
@@ -1083,6 +1056,10 @@ def _tools_for_user(has_google: bool, has_harvest: bool) -> Optional[List[Dict]]
     the model doesn't try to call them and burn a tool-loop iteration on an
     ERROR result.
 
+    The last tool is shallow-copied with `cache_control: ephemeral` so
+    Anthropic caches the entire ~1.8K-token tools array. Without this,
+    tools are billed at full input rate every call.
+
     save_entry is always included — drafting works without Harvest connection
     (drafts go to Supabase + Sheet); only Approve requires Harvest."""
     enabled: List[Dict] = []
@@ -1094,7 +1071,10 @@ def _tools_for_user(has_google: bool, has_harvest: bool) -> Optional[List[Dict]]
             enabled.append(t)
         elif name in _HARVEST_TOOL_NAMES and has_harvest:
             enabled.append(t)
-    return enabled or None
+    if not enabled:
+        return None
+    enabled[-1] = {**enabled[-1], "cache_control": {"type": "ephemeral"}}
+    return enabled
 
 
 def _format_harvest_entries_for_tool(entries: List[Dict]) -> str:
@@ -1924,6 +1904,22 @@ async def chat(req: ChatRequest, request: Request):
             entries_created=[],
         )
 
+    # Anthropic-token budget: per-user 24h cap and org-wide 1h ceiling. Stops
+    # a slow-burn abuse pattern that wouldn't trip the per-minute bucket and
+    # caps worst-case spend if a bug ships that loops forever.
+    budget_ok, budget_reason, budget_retry = rate_limit.check_token_budget(user.get("email", ""))
+    if not budget_ok:
+        msg = (
+            "Your daily quota for AI chat has been reached. It resets in "
+            f"about {budget_retry // 3600}h. Drafts you've already approved are unaffected."
+            if budget_reason == "daily_token_cap"
+            else (
+                "We've temporarily paused AI chat across the team to prevent runaway costs. "
+                f"Please try again in {budget_retry // 60} min. (Logged for review.)"
+            )
+        )
+        return ChatResponse(response=msg, entries_created=[])
+
     # Build messages for Claude. Trim oldest history first (cap at 30 msgs)
     # so a long-running session doesn't unbound the input cost.
     messages = []
@@ -1996,6 +1992,8 @@ async def chat(req: ChatRequest, request: Request):
     chat_start_ts = time.time()
     tool_calls_log: List[Dict] = []
     last_usage: Dict = {}
+    turn_usage_accum: Dict[str, int] = {}
+    turn_budget_tripped = False
     # Entries created via the save_entry tool during this turn — populated by
     # execute_tool. Combined with text-emitted ENTRY blocks (legacy fallback)
     # below.
@@ -2026,6 +2024,20 @@ async def chat(req: ChatRequest, request: Request):
             )
 
         last_usage = training_log.usage_metrics(response)
+        cumulative_billable = _accumulate_usage(turn_usage_accum, last_usage)
+        rate_limit.record_token_usage(
+            user.get("email", ""),
+            (last_usage.get("input_tokens") or 0) + (last_usage.get("output_tokens") or 0),
+        )
+        if cumulative_billable >= PER_TURN_TOKEN_BUDGET:
+            turn_budget_tripped = True
+            text_parts = [getattr(b, "text", "") for b in response.content if hasattr(b, "text")]
+            partial = "\n".join(p for p in text_parts if p)
+            final_text = (partial + "\n\n" if partial else "") + (
+                "I stopped mid-response — this turn was getting too long. "
+                "Please ask again in smaller pieces."
+            )
+            break
 
         if response.stop_reason == "end_turn":
             # Claude is done — extract text
@@ -2230,7 +2242,9 @@ async def chat(req: ChatRequest, request: Request):
         },
         metrics={
             "latency_ms": int((time.time() - chat_start_ts) * 1000),
-            **last_usage,
+            **turn_usage_accum,
+            "iterations": iterations,
+            "turn_budget_tripped": turn_budget_tripped,
         },
     )
     for e in created_entries:
@@ -2281,6 +2295,23 @@ async def chat_stream(req: ChatRequest, request: Request):
                 ),
             })
         return StreamingResponse(_rl(), media_type="text/event-stream")
+
+    budget_ok, budget_reason, budget_retry = rate_limit.check_token_budget(user.get("email", ""))
+    if not budget_ok:
+        async def _budget():
+            yield _sse({
+                "type": "error",
+                "message": (
+                    f"Your daily quota for AI chat has been reached. It resets in "
+                    f"about {budget_retry // 3600}h. Drafts you've already approved are unaffected."
+                    if budget_reason == "daily_token_cap"
+                    else (
+                        f"We've temporarily paused AI chat across the team to prevent runaway costs. "
+                        f"Please try again in {budget_retry // 60} min. (Logged for review.)"
+                    )
+                ),
+            })
+        return StreamingResponse(_budget(), media_type="text/event-stream")
 
     async def gen():
         chat_start_ts = time.time()
@@ -2365,6 +2396,8 @@ async def chat_stream(req: ChatRequest, request: Request):
         )
         tool_calls_log: List[Dict] = []
         last_usage: Dict = {}
+        turn_usage_accum: Dict[str, int] = {}
+        turn_budget_tripped = False
         iterations = 0
         final_text_parts: List[str] = []
         last_response = None
@@ -2394,6 +2427,24 @@ async def chat_stream(req: ChatRequest, request: Request):
                     last_response = await stream.get_final_message()
 
                 last_usage = training_log.usage_metrics(last_response)
+                cumulative_billable = _accumulate_usage(turn_usage_accum, last_usage)
+                rate_limit.record_token_usage(
+                    user.get("email", ""),
+                    (last_usage.get("input_tokens") or 0) + (last_usage.get("output_tokens") or 0),
+                )
+                if cumulative_billable >= PER_TURN_TOKEN_BUDGET:
+                    turn_budget_tripped = True
+                    final_text_parts.append(iter_text)
+                    final_text_parts.append(
+                        "\n\nI stopped mid-response — this turn was getting too long. "
+                        "Please ask again in smaller pieces."
+                    )
+                    yield _sse({
+                        "type": "text",
+                        "delta": "\n\nI stopped mid-response — this turn was getting too long. "
+                                 "Please ask again in smaller pieces.",
+                    })
+                    break
 
                 if last_response.stop_reason == "end_turn":
                     final_text_parts.append(iter_text)
@@ -2564,7 +2615,9 @@ async def chat_stream(req: ChatRequest, request: Request):
                 },
                 metrics={
                     "latency_ms": int((time.time() - chat_start_ts) * 1000),
-                    **last_usage,
+                    **turn_usage_accum,
+                    "iterations": iterations,
+                    "turn_budget_tripped": turn_budget_tripped,
                 },
             )
             for e in created_entries:
@@ -3778,6 +3831,84 @@ async def chat_recent(request: Request, limit: int = 10, days: int = 1):
         "authenticated": True,
         "messages": keep[-max(1, min(limit, 200)):],
         "days": days,
+    }
+
+
+_ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ADMIN_EMAILS", "malik.amin@thrivepr.com.au,mallikamiin@gmail.com").split(",")
+    if e.strip()
+}
+
+
+def _is_admin(user: Optional[Dict]) -> bool:
+    return bool(user and (user.get("email") or "").lower().strip() in _ADMIN_EMAILS)
+
+
+@app.get("/api/admin/usage")
+async def admin_usage(request: Request):
+    """Operational visibility — aggregated Anthropic-token spend by user
+    and by day. Reads the existing training_log JSONL (no extra storage).
+    Gated behind ADMIN_EMAILS env. Returns the live rate-limit window
+    snapshots alongside historical aggregates so the team can see both
+    'what's accruing right now' and 'what did Tariq cost last week'."""
+    user = get_current_user(request)
+    if not _is_admin(user):
+        return JSONResponse(status_code=403, content={"error": "admin access required"})
+
+    log_path = Path(__file__).resolve().parent / "data" / "training_log.jsonl"
+    by_user_day: Dict[str, Dict[str, Dict[str, int]]] = {}
+    rows = 0
+    if log_path.exists():
+        for line in log_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            rows += 1
+            metrics = rec.get("metrics") or {}
+            in_tok = metrics.get("input_tokens") or 0
+            out_tok = metrics.get("output_tokens") or 0
+            cw = metrics.get("cache_creation_input_tokens") or 0
+            cr = metrics.get("cache_read_input_tokens") or 0
+            if not (in_tok or out_tok or cw or cr):
+                continue
+            email = (rec.get("user_email") or "").lower()
+            ts = rec.get("ts") or ""
+            day = ts[:10] if ts else "unknown"
+            bucket = by_user_day.setdefault(email, {}).setdefault(day, {
+                "input_tokens": 0, "output_tokens": 0,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
+                "calls": 0,
+            })
+            bucket["input_tokens"] += in_tok
+            bucket["output_tokens"] += out_tok
+            bucket["cache_creation_input_tokens"] += cw
+            bucket["cache_read_input_tokens"] += cr
+            bucket["calls"] += 1
+
+    snapshots: Dict[str, Dict[str, int]] = {
+        email: rate_limit.usage_snapshot(email)
+        for email in by_user_day.keys()
+    }
+    org_snapshot = rate_limit.usage_snapshot("")
+    return {
+        "rows_scanned": rows,
+        "live_org": {
+            "hourly_tokens": org_snapshot["org_hourly_tokens"],
+            "hourly_cap": org_snapshot["org_hourly_cap"],
+        },
+        "live_users": {
+            email: {
+                "daily_tokens": s["user_daily_tokens"],
+                "daily_cap": s["user_daily_cap"],
+            }
+            for email, s in snapshots.items()
+        },
+        "history_by_user_day": by_user_day,
     }
 
 
