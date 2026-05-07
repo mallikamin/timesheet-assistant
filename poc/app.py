@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "cost-controls-2026-05-07m"
+BUILD_MARKER = "admin-token-2026-05-07n"
 
 
 @asynccontextmanager
@@ -3845,15 +3845,28 @@ def _is_admin(user: Optional[Dict]) -> bool:
     return bool(user and (user.get("email") or "").lower().strip() in _ADMIN_EMAILS)
 
 
+def _admin_token_ok(request: Request) -> bool:
+    """Header-based admin auth. Lets headless clients (cron jobs on the
+    edge box) hit the admin endpoints without holding a session cookie.
+    Empty ADMIN_API_TOKEN env var disables this path entirely."""
+    expected = os.environ.get("ADMIN_API_TOKEN", "").strip()
+    if not expected:
+        return False
+    presented = (request.headers.get("X-Admin-Token") or "").strip()
+    return bool(presented) and presented == expected
+
+
 @app.get("/api/admin/usage")
 async def admin_usage(request: Request):
     """Operational visibility — aggregated Anthropic-token spend by user
     and by day. Reads the existing training_log JSONL (no extra storage).
-    Gated behind ADMIN_EMAILS env. Returns the live rate-limit window
-    snapshots alongside historical aggregates so the team can see both
-    'what's accruing right now' and 'what did Tariq cost last week'."""
+    Gated behind ADMIN_EMAILS env (session-cookie path) OR the
+    X-Admin-Token header (matched against ADMIN_API_TOKEN env). Returns
+    the live rate-limit window snapshots alongside historical aggregates
+    so the team can see both 'what's accruing right now' and 'what did
+    Tariq cost last week'."""
     user = get_current_user(request)
-    if not _is_admin(user):
+    if not _is_admin(user) and not _admin_token_ok(request):
         return JSONResponse(status_code=403, content={"error": "admin access required"})
 
     log_path = Path(__file__).resolve().parent / "data" / "training_log.jsonl"

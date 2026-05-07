@@ -1910,6 +1910,35 @@ class CostControlsTests(unittest.TestCase):
         self.assertFalse(app_mod._is_admin({"email": "miles.alexander@thrivepr.com.au"}))
         self.assertFalse(app_mod._is_admin(None))
 
+    def test_admin_endpoint_accepts_header_token(self):
+        """Edge-box cron hits this without a session cookie — the
+        X-Admin-Token header path must let it through when the env var
+        matches. Empty/missing/wrong token still 403s."""
+        import app as app_mod
+        import asyncio
+        import httpx
+        async def _go(headers):
+            transport = httpx.ASGITransport(app=app_mod.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+                return await ac.get("/api/admin/usage", headers=headers)
+
+        with patch.dict(os.environ, {"ADMIN_API_TOKEN": "secret-cron-token"}):
+            r_ok = asyncio.run(_go({"X-Admin-Token": "secret-cron-token"}))
+            self.assertEqual(r_ok.status_code, 200)
+            self.assertIn("live_org", r_ok.json())
+
+            r_wrong = asyncio.run(_go({"X-Admin-Token": "guess"}))
+            self.assertEqual(r_wrong.status_code, 403)
+
+            r_missing = asyncio.run(_go({}))
+            self.assertEqual(r_missing.status_code, 403)
+
+        # Empty env var means the header path is disabled entirely — even
+        # the right token can't unlock without a session cookie.
+        with patch.dict(os.environ, {"ADMIN_API_TOKEN": ""}):
+            r = asyncio.run(_go({"X-Admin-Token": "secret-cron-token"}))
+            self.assertEqual(r.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
