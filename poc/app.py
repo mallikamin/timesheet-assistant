@@ -75,7 +75,7 @@ _BOOT_TS = time.time()
 # Build marker. Bump per substantive code change so we can verify the live
 # deploy matches what we expect (badge in top bar + /health "build.marker").
 # Format: short-slug-DATE-letter (letter increments within the same day).
-BUILD_MARKER = "admin-token-2026-05-07n"
+BUILD_MARKER = "admin-tripped-count-2026-05-07o"
 
 
 @asynccontextmanager
@@ -3895,13 +3895,15 @@ async def admin_usage(request: Request):
             bucket = by_user_day.setdefault(email, {}).setdefault(day, {
                 "input_tokens": 0, "output_tokens": 0,
                 "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0,
-                "calls": 0,
+                "calls": 0, "turn_budget_tripped_count": 0,
             })
             bucket["input_tokens"] += in_tok
             bucket["output_tokens"] += out_tok
             bucket["cache_creation_input_tokens"] += cw
             bucket["cache_read_input_tokens"] += cr
             bucket["calls"] += 1
+            if metrics.get("turn_budget_tripped"):
+                bucket["turn_budget_tripped_count"] += 1
 
     snapshots: Dict[str, Dict[str, int]] = {
         email: rate_limit.usage_snapshot(email)
